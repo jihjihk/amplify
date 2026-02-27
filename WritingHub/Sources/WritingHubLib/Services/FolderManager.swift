@@ -33,11 +33,10 @@ public class FolderManager: ObservableObject {
             withIntermediateDirectories: true
         )
 
-        // Create CLAUDE.md placeholder
+        // Create CLAUDE.md with full template
         let claudePath = root.appendingPathComponent("CLAUDE.md")
         if !fm.fileExists(atPath: claudePath.path) {
-            let placeholder = "# Writing Hub\n\nSee the full CLAUDE.md template for instructions.\n"
-            try placeholder.write(to: claudePath, atomically: true, encoding: .utf8)
+            try CLAUDETemplate.content.write(to: claudePath, atomically: true, encoding: .utf8)
         }
     }
 
