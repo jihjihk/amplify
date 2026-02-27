@@ -1,4 +1,5 @@
 import SwiftUI
+import WritingHubLib
 
 @main
 struct WritingHubApp: App {

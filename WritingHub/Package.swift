@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -10,13 +10,19 @@ let package = Package(
         .package(url: "https://github.com/stevengharris/MarkupEditor.git", from: "0.6.0"),
     ],
     targets: [
+        .target(
+            name: "WritingHubLib",
+            dependencies: ["SwiftTerm", "Yams", "MarkupEditor"],
+            path: "Sources/WritingHubLib"
+        ),
         .executableTarget(
             name: "WritingHub",
-            dependencies: ["SwiftTerm", "Yams", "MarkupEditor"]
+            dependencies: ["WritingHubLib"],
+            path: "Sources/WritingHub"
         ),
         .testTarget(
             name: "WritingHubTests",
-            dependencies: ["WritingHub"]
+            dependencies: ["WritingHubLib"]
         ),
     ]
 )
