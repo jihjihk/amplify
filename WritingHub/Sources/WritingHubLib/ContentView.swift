@@ -39,6 +39,7 @@ public struct ContentView: View {
                         }
                         .frame(minWidth: 300, idealWidth: 380, maxWidth: 500)
                     }
+                    StatusBar(viewModel: viewModel)
                 }
             } else {
                 WelcomeView(onOpenFolder: openFolder)
