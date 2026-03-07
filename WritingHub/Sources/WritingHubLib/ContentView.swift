@@ -1,4 +1,5 @@
 import SwiftUI
+import MarkupEditor
 
 // MARK: - ContentView
 
@@ -11,27 +12,25 @@ public struct ContentView: View {
         Group {
             if viewModel.isHubOpen {
                 VStack(spacing: 0) {
+                    BrandingHeader(config: viewModel.config)
+
                     HSplitView {
-                        // Left: Pipeline sidebar
-                        PipelineSidebar(viewModel: viewModel)
+                        Sidebar(viewModel: viewModel)
                             .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
 
-                        // Center: WYSIWYG editor
                         EditorView(viewModel: viewModel)
                             .frame(minWidth: 400)
 
-                        // Right: Claude Code terminal
                         VStack(spacing: 0) {
                             HStack {
                                 Text("Claude Code")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(AmplifyColors.inkTertiary)
                                 Spacer()
                             }
                             .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.bar)
+                            .padding(.vertical, 5)
+                            .background(AmplifyColors.barBg)
 
                             if let root = viewModel.folderManager?.root {
                                 TerminalPanelView(folderPath: root)
@@ -43,13 +42,52 @@ public struct ContentView: View {
                 }
             } else {
                 WelcomeView(onOpenFolder: openFolder)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AmplifyColors.parchment)
             }
         }
         .frame(minWidth: 900, minHeight: 600)
+        .background(AmplifyColors.parchment)
+        .tint(AmplifyColors.accent)
+        .navigationTitle(viewModel.isHubOpen
+            ? viewModel.folderManager?.root.lastPathComponent ?? "Amplify"
+            : "Amplify")
+        // Pre-warm WKWebView — overlay keeps it alive without affecting background rendering
+        .overlay(alignment: .bottomTrailing) {
+            MarkupEditorView(html: .constant(""))
+                .frame(width: 1, height: 1)
+                .opacity(0)
+                .allowsHitTesting(false)
+        }
     }
 
-    private func openFolder(_ url: URL) {
-        try? viewModel.openFolder(url)
+    private func openFolder(_ url: URL, skill: SkillPack, name: String) {
+        try? viewModel.openFolder(url, skill: skill)
+        let config = HubConfig(name: name, skillPack: skill)
+        config.save(to: url)
+        viewModel.config = config
+        viewModel.skillPack = skill
+    }
+}
+
+// MARK: - BrandingHeader
+
+struct BrandingHeader: View {
+    let config: HubConfig
+
+    var body: some View {
+        HStack {
+            Text("amplifying ")
+                .font(AmplifyFonts.instrumentSerif(size: 22))
+                .foregroundStyle(AmplifyColors.inkSecondary)
+            + Text(config.name)
+                .font(AmplifyFonts.instrumentSerifItalic(size: 22))
+                .foregroundStyle(AmplifyColors.inkPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 7)
+        .background(AmplifyColors.barBg)
     }
 }
 
@@ -57,17 +95,19 @@ public struct ContentView: View {
 
 enum OnboardingStep {
     case pickFolder
-    case scaffolded(URL)
+    case enterName(URL)
+    case scaffolded(URL, SkillPack, String)
 }
 
 // MARK: - WelcomeView
 
 public struct WelcomeView: View {
-    public let onOpenFolder: (URL) -> Void
+    public let onOpenFolder: (URL, SkillPack, String) -> Void
     @State private var showPicker = false
     @State private var step: OnboardingStep = .pickFolder
+    @State private var userName: String = ""
 
-    public init(onOpenFolder: @escaping (URL) -> Void) {
+    public init(onOpenFolder: @escaping (URL, SkillPack, String) -> Void) {
         self.onOpenFolder = onOpenFolder
     }
 
@@ -75,28 +115,29 @@ public struct WelcomeView: View {
         switch step {
         case .pickFolder:
             pickFolderView
-        case .scaffolded(let url):
-            scaffoldedView(url: url)
+        case .enterName(let url):
+            enterNameView(url: url)
+        case .scaffolded(let url, let skill, let name):
+            scaffoldedView(url: url, skill: skill, name: name)
         }
     }
 
     // MARK: - Step 1: Pick Folder
 
     private var pickFolderView: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             Spacer()
 
-            Image(systemName: "pencil.and.outline")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
+            VStack(spacing: 12) {
+                Text("Amplify")
+                    .font(AmplifyFonts.largeTitle)
+                    .foregroundStyle(AmplifyColors.inkPrimary)
 
-            Text("Writing Hub")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Text("Choose a folder to get started")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                Text("The better, faster and cheaper way to write with agents and amplify your voice")
+                    .font(AmplifyFonts.title3)
+                    .foregroundStyle(AmplifyColors.inkSecondary)
+                    .multilineTextAlignment(.center)
+            }
 
             Button("Choose Folder") {
                 showPicker = true
@@ -106,48 +147,101 @@ public struct WelcomeView: View {
 
             Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fileImporter(
             isPresented: $showPicker,
             allowedContentTypes: [.folder],
             allowsMultipleSelection: false
         ) { result in
-            if case .success(let urls) = result, let url = urls.first {
-                let manager = FolderManager(root: url)
-                try? manager.scaffold()
-                step = .scaffolded(url)
+            guard case .success(let urls) = result, let url = urls.first else { return }
+
+            if let existing = HubConfig.load(from: url) {
+                onOpenFolder(url, existing.skillPack, existing.name)
+            } else {
+                step = .enterName(url)
             }
         }
     }
 
-    // MARK: - Step 2: Scaffolded Confirmation
+    // MARK: - Step 2: Enter Name
 
-    private func scaffoldedView(url: URL) -> some View {
+    private func enterNameView(url: URL) -> some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Large serif name input — the name appears inline with "amplifying"
+            ZStack(alignment: .leading) {
+                (
+                    Text("amplifying ")
+                        .font(AmplifyFonts.instrumentSerif(size: 42))
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                    + Text(userName.isEmpty ? "your name" : userName)
+                        .font(AmplifyFonts.instrumentSerifItalic(size: 42))
+                        .foregroundStyle(userName.isEmpty ? AmplifyColors.inkTertiary : AmplifyColors.inkPrimary)
+                )
+                .frame(maxWidth: 520, alignment: .leading)
+
+                // Invisible text field — captures input, updates userName
+                TextField("", text: $userName)
+                    .font(AmplifyFonts.instrumentSerifItalic(size: 42))
+                    .textFieldStyle(.plain)
+                    .opacity(0.01)
+                    .frame(maxWidth: 520)
+            }
+
+            Spacer().frame(height: 52)
+
+            Button("Continue") {
+                let name = userName.trimmingCharacters(in: .whitespaces)
+                let finalName = name.isEmpty ? "you" : name
+                let manager = FolderManager(root: url)
+                try? manager.scaffold(skill: .founder)
+                step = .scaffolded(url, .founder, finalName)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+
+            Spacer()
+        }
+        .padding(40)
+    }
+
+    // MARK: - Step 3: Scaffolded Confirmation
+
+    private func scaffoldedView(url: URL, skill: SkillPack, name: String) -> some View {
         VStack(spacing: 24) {
             Spacer()
 
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.green)
+                .font(.system(size: 56))
+                .foregroundStyle(AmplifyColors.accent)
 
-            Text("Hub created at \(url.lastPathComponent)/")
-                .font(.title2)
-                .fontWeight(.semibold)
+            VStack(spacing: 8) {
+                Text("Workspace ready")
+                    .font(AmplifyFonts.title2)
+                    .foregroundStyle(AmplifyColors.inkPrimary)
 
-            VStack(alignment: .leading, spacing: 12) {
+                Text(url.lastPathComponent + "/")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(AmplifyColors.inkTertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
                 Text("Next steps:")
-                    .font(.headline)
+                    .font(AmplifyFonts.headline)
+                    .foregroundStyle(AmplifyColors.inkPrimary)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("1. Drop past writing into references/")
-                    Text("2. Run /createvoicedna in the terminal")
+                    Text("2. Ask Claude to \"create voice dna\" in the terminal")
                     Text("3. Start writing!")
                 }
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AmplifyColors.inkSecondary)
             }
 
-            Button("Open Hub") {
-                onOpenFolder(url)
+            Button("Open Workspace") {
+                onOpenFolder(url, skill, name)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

@@ -18,10 +18,10 @@ public final class FileWatcher: @unchecked Sendable {
     // MARK: - Self-write tracking
 
     /// Mark a file path as a self-write so the watcher ignores it.
-    /// The path is automatically removed after 200ms.
+    /// The path is automatically removed after 500ms.
     public func markSelfWrite(_ filePath: String) {
         pendingSelfWrites.insert(filePath)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.pendingSelfWrites.remove(filePath)
         }
     }
@@ -46,7 +46,7 @@ public final class FileWatcher: @unchecked Sendable {
             &context,
             pathsToWatch,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.5,  // 500ms latency
+            0.2,  // 200ms latency
             flags
         )
 
@@ -83,11 +83,15 @@ public final class FileWatcher: @unchecked Sendable {
         guard let info = clientCallBackInfo else { return }
         let watcher = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
 
-        // Check if any event path is NOT a self-write
+        // Check if any event path is NOT a self-write and not noise (.git, .DS_Store)
         var hasExternalChange = false
 
         if let cfArray = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] {
             for path in cfArray {
+                // Skip .git directory changes and .DS_Store files
+                if path.contains("/.git/") || path.hasSuffix(".DS_Store") {
+                    continue
+                }
                 if !watcher.pendingSelfWrites.contains(path) {
                     hasExternalChange = true
                     break

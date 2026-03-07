@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -5,20 +6,25 @@ import SwiftUI
 public class HubViewModel: ObservableObject {
     @Published public var folderManager: FolderManager?
     @Published public var selectedFile: WritingPiece?
-    @Published public var pieces: [PipelineStage: [WritingPiece]] = [:]
+    @Published public var workspaceFiles: [WorkspaceItem] = []
     @Published public var isHubOpen: Bool = false
+    @Published public var config: HubConfig = HubConfig()
+    @Published public var skillPack: SkillPack = .founder
 
     private var fileWatcher: FileWatcher?
     private var gitService: GitService?
+    private var cancellables = Set<AnyCancellable>()
 
     public init() {}
 
     // MARK: - Open Folder
 
-    /// Scaffold the folder structure, initialize git, start the file watcher, and load all pieces.
-    public func openFolder(_ url: URL) throws {
+    /// Scaffold the folder structure, initialize git, start the file watcher, and load files.
+    public func openFolder(_ url: URL, skill: SkillPack = .founder) throws {
+        self.skillPack = skill
+
         let manager = FolderManager(root: url)
-        try manager.scaffold()
+        try manager.scaffold(skill: skill)
         self.folderManager = manager
 
         let git = GitService(repoPath: url)
@@ -34,47 +40,44 @@ public class HubViewModel: ObservableObject {
         watcher.start()
         self.fileWatcher = watcher
 
+        // Write .writinghub/context.md whenever the selected file changes
+        $selectedFile
+            .sink { [weak self] piece in
+                self?.writeContextFile(for: piece)
+            }
+            .store(in: &cancellables)
+
+        // Load config — restores name and skill pack for existing workspaces
+        if let saved = HubConfig.load(from: url) {
+            config = saved
+            self.skillPack = saved.skillPack
+        }
+
         reload()
         isHubOpen = true
     }
 
     // MARK: - Reload
 
-    /// Reload all pieces from the folder manager and store them in the local pieces dictionary.
+    /// Reload workspace files from disk. Refreshes selectedFile if content changed.
     public func reload() {
         guard let folderManager else { return }
-        do {
-            try folderManager.loadAllPieces()
-            pieces = folderManager.pieces
-        } catch {
-            // In a production app we would surface this error to the user.
-            print("[HubViewModel] reload error: \(error.localizedDescription)")
-        }
-    }
 
-    // MARK: - Promote
-
-    /// Promote a piece to the next pipeline stage and auto-commit the change.
-    public func promote(_ piece: WritingPiece, from stage: PipelineStage) {
-        guard let folderManager, let filePath = piece.filePath else { return }
-        let fileName = filePath.lastPathComponent
-        do {
-            fileWatcher?.markSelfWrite(filePath.path)
-            try folderManager.promote(fileName: fileName, from: stage)
-            if let nextStage = stage.next {
-                let destPath = folderManager.root
-                    .appendingPathComponent(nextStage.folderName)
-                    .appendingPathComponent(fileName)
-                    .path
-                fileWatcher?.markSelfWrite(destPath)
+        // Refresh selectedFile from disk if it still exists
+        if let currentPath = selectedFile?.filePath {
+            if FileManager.default.fileExists(atPath: currentPath.path) {
+                if let content = try? String(contentsOf: currentPath, encoding: .utf8),
+                   var freshPiece = try? WritingPiece.parse(from: content) {
+                    freshPiece.filePath = currentPath
+                    selectedFile = freshPiece
+                }
+            } else {
+                selectedFile = nil
             }
-            try gitService?.autoCommit(
-                message: "Promote \(fileName) from \(stage.rawValue) to \(stage.next?.rawValue ?? "?")"
-            )
-            reload()
-        } catch {
-            print("[HubViewModel] promote error: \(error.localizedDescription)")
         }
+
+        workspaceFiles = folderManager.loadWorkspaceFiles()
+        objectWillChange.send()
     }
 
     // MARK: - Save Piece
@@ -96,10 +99,45 @@ public class HubViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Pipeline Counts
+    // MARK: - File Count
 
-    /// Returns the count of pieces per stage.
-    public func pipelineCounts() -> [PipelineStage: Int] {
-        pieces.mapValues { $0.count }
+    /// Returns total count of files in workspace.
+    public func fileCount() -> Int {
+        countFiles(in: workspaceFiles)
+    }
+
+    private func countFiles(in items: [WorkspaceItem]) -> Int {
+        items.reduce(0) { count, item in
+            if item.isDirectory {
+                return count + countFiles(in: item.children)
+            }
+            return count + 1
+        }
+    }
+
+    // MARK: - Context File
+
+    /// Writes `.writinghub/context.md` so Claude Code knows which file is currently open.
+    private func writeContextFile(for piece: WritingPiece?) {
+        guard let folderManager else { return }
+        let contextURL = folderManager.root
+            .appendingPathComponent(".writinghub")
+            .appendingPathComponent("context.md")
+
+        fileWatcher?.markSelfWrite(contextURL.path)
+
+        if let piece, let filePath = piece.filePath {
+            let relativePath = filePath.path
+                .replacingOccurrences(of: folderManager.root.path + "/", with: "")
+            let title = piece.frontMatter.title ?? filePath.deletingPathExtension().lastPathComponent
+            let content = """
+                # Active File
+                - path: \(relativePath)
+                - title: \(title)
+                """
+            try? content.write(to: contextURL, atomically: true, encoding: .utf8)
+        } else {
+            try? "".write(to: contextURL, atomically: true, encoding: .utf8)
+        }
     }
 }

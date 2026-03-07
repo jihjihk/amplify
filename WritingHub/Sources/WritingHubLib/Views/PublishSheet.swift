@@ -13,8 +13,7 @@ public struct PublishSheet: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Publish to...")
-                .font(.title2)
-                .fontWeight(.semibold)
+                .font(AmplifyFonts.title2)
 
             Divider()
 
@@ -36,7 +35,7 @@ public struct PublishSheet: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(platform.capitalized)
-                                    .fontWeight(.medium)
+                                    .font(AmplifyFonts.headline)
 
                                 if piece.platformSections[platform] != nil {
                                     Text("Ready")

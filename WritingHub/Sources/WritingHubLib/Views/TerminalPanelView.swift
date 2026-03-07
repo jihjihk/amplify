@@ -11,15 +11,19 @@ public struct TerminalPanelView: NSViewRepresentable {
         self.folderPath = folderPath
     }
 
+    public func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     public func makeNSView(context: Context) -> LocalProcessTerminalView {
         let terminalView = LocalProcessTerminalView(frame: .zero)
 
         // Style: monospace font 13pt
         terminalView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
-        // Style: dark background, light foreground
-        terminalView.nativeBackgroundColor = NSColor(calibratedWhite: 0.12, alpha: 1.0)
-        terminalView.nativeForegroundColor = NSColor(calibratedWhite: 0.9, alpha: 1.0)
+        // Style: warm walnut dark background, parchment foreground
+        terminalView.nativeBackgroundColor = AmplifyColors.terminalBg
+        terminalView.nativeForegroundColor = AmplifyColors.terminalFg
 
         // Start a zsh process, cd to the folder, and clear the screen
         let directory = folderPath.path
@@ -35,10 +39,22 @@ public struct TerminalPanelView: NSViewRepresentable {
         let clearCommand = Array("clear\n".utf8)
         terminalView.send(source: terminalView, data: clearCommand[...])
 
+        // Store reference for focus management
+        context.coordinator.terminalView = terminalView
+
+        // Schedule focus after the view is fully in the window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            terminalView.window?.makeFirstResponder(terminalView)
+        }
+
         return terminalView
     }
 
     public func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         // No dynamic updates needed
+    }
+
+    public class Coordinator {
+        var terminalView: LocalProcessTerminalView?
     }
 }

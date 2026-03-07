@@ -63,54 +63,50 @@ public struct WritingPiece: Sendable {
 
     private static func splitPlatformSections(from content: String) -> (body: String, platforms: [String: String]) {
         var platforms: [String: String] = [:]
-
-        // Split on --- that act as section dividers (not frontmatter)
-        // We look for lines that are just "---" (possibly with whitespace)
         let lines = content.components(separatedBy: "\n")
 
-        var bodyLines: [String] = []
+        // Find the "## Platform Versions" marker — only content after this marker
+        // is treated as platform sections. This avoids misinterpreting normal markdown
+        // horizontal rules (---) followed by ## headings as platform sections.
+        var markerIndex: Int? = nil
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "## Platform Versions" {
+                markerIndex = i
+                break
+            }
+        }
+
+        guard let marker = markerIndex else {
+            // No platform versions section — everything is body
+            return (body: content, platforms: [:])
+        }
+
+        // Body is everything before the marker
+        let bodyLines = Array(lines[0..<marker])
+        let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Parse platform sub-sections after the marker
         var currentPlatformName: String? = nil
         var currentPlatformLines: [String] = []
-        var foundFirstSeparator = false
 
-        var i = 0
-        while i < lines.count {
+        for i in (marker + 1)..<lines.count {
             let line = lines[i]
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-            if trimmedLine == "---" {
-                // Check if the next non-empty line is a ## heading
-                var nextContentIndex = i + 1
-                while nextContentIndex < lines.count && lines[nextContentIndex].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    nextContentIndex += 1
+            if trimmed.hasPrefix("## ") {
+                // Save previous platform section
+                if let name = currentPlatformName {
+                    platforms[name] = currentPlatformLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-
-                if nextContentIndex < lines.count && lines[nextContentIndex].trimmingCharacters(in: .whitespaces).hasPrefix("## ") {
-                    // Save any current platform section
-                    if let name = currentPlatformName {
-                        platforms[name] = currentPlatformLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-
-                    // Extract platform name from ## heading
-                    let heading = lines[nextContentIndex].trimmingCharacters(in: .whitespaces)
-                    let platformName = String(heading.dropFirst(3)) // Remove "## "
-
-                    currentPlatformName = platformName
-                    currentPlatformLines = []
-                    foundFirstSeparator = true
-                    i = nextContentIndex + 1 // Skip past the heading
-                    continue
-                } else if !foundFirstSeparator {
-                    // Not a platform separator, include in body
-                    bodyLines.append(line)
-                }
-            } else if let _ = currentPlatformName {
+                currentPlatformName = String(trimmed.dropFirst(3))
+                currentPlatformLines = []
+            } else if trimmed == "---" {
+                // Section divider between platforms — skip
+                continue
+            } else if currentPlatformName != nil {
                 currentPlatformLines.append(line)
-            } else {
-                bodyLines.append(line)
             }
-
-            i += 1
         }
 
         // Save the last platform section
@@ -118,7 +114,6 @@ public struct WritingPiece: Sendable {
             platforms[name] = currentPlatformLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         return (body: body, platforms: platforms)
     }
 
@@ -143,11 +138,13 @@ public struct WritingPiece: Sendable {
             result += "\n" + body + "\n"
         }
 
-        // Add platform sections
-        for (name, content) in platformSections.sorted(by: { $0.key < $1.key }) {
-            result += "\n---\n\n"
-            result += "## \(name)\n\n"
-            result += content + "\n"
+        // Add platform sections under a marker heading
+        if !platformSections.isEmpty {
+            result += "\n## Platform Versions\n"
+            for (name, content) in platformSections.sorted(by: { $0.key < $1.key }) {
+                result += "\n## \(name)\n\n"
+                result += content + "\n"
+            }
         }
 
         return result

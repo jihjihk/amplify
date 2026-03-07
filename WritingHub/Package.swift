@@ -13,7 +13,10 @@ let package = Package(
         .target(
             name: "WritingHubLib",
             dependencies: ["SwiftTerm", "Yams", "MarkupEditor"],
-            path: "Sources/WritingHubLib"
+            path: "Sources/WritingHubLib",
+            resources: [
+                .copy("Resources/Fonts"),
+            ]
         ),
         .executableTarget(
             name: "WritingHub",

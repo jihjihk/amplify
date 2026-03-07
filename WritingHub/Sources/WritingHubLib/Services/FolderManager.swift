@@ -3,7 +3,6 @@ import Yams
 
 public class FolderManager: ObservableObject {
     public let root: URL
-    @Published public var pieces: [PipelineStage: [WritingPiece]] = [:]
 
     public init(root: URL) {
         self.root = root
@@ -11,21 +10,10 @@ public class FolderManager: ObservableObject {
 
     // MARK: - Scaffold
 
-    /// Creates all stage directories, references/, .writinghub/, and a placeholder CLAUDE.md.
-    public func scaffold() throws {
+    /// Creates `.writinghub/` and writes CLAUDE.md. Accepts an optional skill pack
+    /// to create skill-specific folders and a tailored CLAUDE.md template.
+    public func scaffold(skill: SkillPack = .founder) throws {
         let fm = FileManager.default
-
-        // Create stage directories
-        for stage in PipelineStage.allCases {
-            let dir = root.appendingPathComponent(stage.folderName)
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-
-        // Create references/
-        try fm.createDirectory(
-            at: root.appendingPathComponent("references"),
-            withIntermediateDirectories: true
-        )
 
         // Create .writinghub/
         try fm.createDirectory(
@@ -33,79 +21,17 @@ public class FolderManager: ObservableObject {
             withIntermediateDirectories: true
         )
 
-        // Create CLAUDE.md with full template
+        // Create skill-specific folders
+        for folder in skill.folders {
+            try fm.createDirectory(
+                at: root.appendingPathComponent(folder),
+                withIntermediateDirectories: true
+            )
+        }
+
+        // Write the skill-specific CLAUDE.md template
         let claudePath = root.appendingPathComponent("CLAUDE.md")
-        if !fm.fileExists(atPath: claudePath.path) {
-            try CLAUDETemplate.content.write(to: claudePath, atomically: true, encoding: .utf8)
-        }
-    }
-
-    // MARK: - Load Pieces
-
-    /// Loads all WritingPiece files from the given stage's folder.
-    public func loadPieces(for stage: PipelineStage) throws -> [WritingPiece] {
-        let fm = FileManager.default
-        let stageDir = root.appendingPathComponent(stage.folderName)
-
-        guard fm.fileExists(atPath: stageDir.path) else {
-            return []
-        }
-
-        let contents = try fm.contentsOfDirectory(
-            at: stageDir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )
-
-        let markdownFiles = contents.filter { $0.pathExtension == "md" }
-
-        return try markdownFiles.map { fileURL in
-            let content = try String(contentsOf: fileURL, encoding: .utf8)
-            var piece = try WritingPiece.parse(from: content)
-            piece.filePath = fileURL
-            return piece
-        }
-    }
-
-    /// Loads pieces from all stages and populates the pieces dictionary.
-    public func loadAllPieces() throws {
-        var allPieces: [PipelineStage: [WritingPiece]] = [:]
-        for stage in PipelineStage.allCases {
-            allPieces[stage] = try loadPieces(for: stage)
-        }
-        pieces = allPieces
-    }
-
-    // MARK: - Promote
-
-    /// Moves a file from one stage folder to the next and updates frontmatter.
-    public func promote(fileName: String, from stage: PipelineStage) throws {
-        guard let nextStage = stage.next else {
-            throw FolderManagerError.noNextStage(stage)
-        }
-
-        let sourceURL = root
-            .appendingPathComponent(stage.folderName)
-            .appendingPathComponent(fileName)
-        let destURL = root
-            .appendingPathComponent(nextStage.folderName)
-            .appendingPathComponent(fileName)
-
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: sourceURL.path) else {
-            throw FolderManagerError.fileNotFound(sourceURL.path)
-        }
-
-        // Read, update frontmatter, write to new location, remove old
-        let content = try String(contentsOf: sourceURL, encoding: .utf8)
-        var piece = try WritingPiece.parse(from: content)
-        piece.frontMatter.stage = nextStage
-        piece.frontMatter.edited = Self.todayString()
-        piece.filePath = destURL
-
-        let serialized = piece.serialize()
-        try serialized.write(to: destURL, atomically: true, encoding: .utf8)
-        try fm.removeItem(at: sourceURL)
+        try skill.claudeTemplate.write(to: claudePath, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Save Piece
@@ -123,6 +49,57 @@ public class FolderManager: ObservableObject {
         try serialized.write(to: filePath, atomically: true, encoding: .utf8)
     }
 
+    // MARK: - Workspace Files
+
+    /// Directories to exclude from the workspace listing.
+    private static let excludedNames: Set<String> = [
+        ".git", ".writinghub", ".DS_Store",
+    ]
+
+    /// Scans the root directory and returns a tree of files and folders.
+    public func loadWorkspaceFiles() -> [WorkspaceItem] {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        let filtered = contents
+            .filter { !Self.excludedNames.contains($0.lastPathComponent) }
+            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+
+        return filtered.compactMap { url in
+            buildWorkspaceItem(at: url, fm: fm)
+        }
+    }
+
+    private func buildWorkspaceItem(at url: URL, fm: FileManager) -> WorkspaceItem? {
+        let name = url.lastPathComponent
+        let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+
+        if isDir {
+            let children: [WorkspaceItem]
+            if let subContents = try? fm.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                children = subContents
+                    .filter { $0.lastPathComponent != ".DS_Store" }
+                    .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+                    .compactMap { buildWorkspaceItem(at: $0, fm: fm) }
+            } else {
+                children = []
+            }
+            return WorkspaceItem(name: name, path: url, isDirectory: true, children: children)
+        } else {
+            return WorkspaceItem(name: name, path: url, isDirectory: false)
+        }
+    }
+
     // MARK: - Helpers
 
     /// Returns today's date as "yyyy-MM-dd".
@@ -137,14 +114,11 @@ public class FolderManager: ObservableObject {
 // MARK: - Errors
 
 public enum FolderManagerError: Error, LocalizedError {
-    case noNextStage(PipelineStage)
     case fileNotFound(String)
     case noFilePath
 
     public var errorDescription: String? {
         switch self {
-        case .noNextStage(let stage):
-            return "Cannot promote from '\(stage.rawValue)' — it is the final stage."
         case .fileNotFound(let path):
             return "File not found: \(path)"
         case .noFilePath:
