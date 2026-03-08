@@ -5,11 +5,20 @@ import SwiftUI
 @MainActor
 public class HubViewModel: ObservableObject {
     @Published public var folderManager: FolderManager?
-    @Published public var selectedFile: WritingPiece?
+    @Published public var openTabs: [WritingPiece] = []
+    @Published public var activeTabIndex: Int = 0
+    @Published public var dirtyTabPaths: Set<URL> = []
     @Published public var workspaceFiles: [WorkspaceItem] = []
     @Published public var isHubOpen: Bool = false
     @Published public var config: HubConfig = HubConfig()
     @Published public var skillPack: SkillPack = .founder
+
+    public var selectedFile: WritingPiece? {
+        get { openTabs.indices.contains(activeTabIndex) ? openTabs[activeTabIndex] : nil }
+        set {
+            if let newValue { openTab(newValue) }
+        }
+    }
 
     private var fileWatcher: FileWatcher?
     private var gitService: GitService?
@@ -49,7 +58,8 @@ public class HubViewModel: ObservableObject {
         self.fileWatcher = watcher
 
         // Write .writinghub/context.md whenever the selected file changes
-        $selectedFile
+        Publishers.CombineLatest($openTabs, $activeTabIndex)
+            .map { tabs, idx in tabs.indices.contains(idx) ? tabs[idx] : nil }
             .sink { [weak self] piece in
                 self?.writeContextFile(for: piece)
             }
@@ -65,23 +75,48 @@ public class HubViewModel: ObservableObject {
         isHubOpen = true
     }
 
+    // MARK: - Tab Management
+
+    public func openTab(_ piece: WritingPiece) {
+        if let idx = openTabs.firstIndex(where: { $0.filePath == piece.filePath }) {
+            activeTabIndex = idx
+        } else {
+            openTabs.append(piece)
+            activeTabIndex = openTabs.count - 1
+        }
+        objectWillChange.send()
+    }
+
+    public func closeTab(at index: Int) {
+        guard openTabs.indices.contains(index) else { return }
+        openTabs.remove(at: index)
+        activeTabIndex = openTabs.isEmpty ? 0 : min(activeTabIndex, openTabs.count - 1)
+        objectWillChange.send()
+    }
+
+    public func closeActiveTab() {
+        closeTab(at: activeTabIndex)
+    }
+
     // MARK: - Reload
 
-    /// Reload workspace files from disk. Refreshes selectedFile if content changed.
+    /// Reload workspace files from disk. Refreshes open tabs if content changed.
     public func reload() {
         guard let folderManager else { return }
 
-        // Refresh selectedFile from disk if it still exists
-        if let currentPath = selectedFile?.filePath {
-            if FileManager.default.fileExists(atPath: currentPath.path) {
-                if let content = try? String(contentsOf: currentPath, encoding: .utf8),
-                   var freshPiece = try? WritingPiece.parse(from: content) {
-                    freshPiece.filePath = currentPath
-                    selectedFile = freshPiece
-                }
-            } else {
-                selectedFile = nil
+        // Refresh each open tab from disk
+        openTabs = openTabs.compactMap { tab in
+            guard let path = tab.filePath else { return tab }
+            guard FileManager.default.fileExists(atPath: path.path) else { return nil }
+            if let content = try? String(contentsOf: path, encoding: .utf8),
+               var fresh = try? WritingPiece.parse(from: content) {
+                fresh.filePath = path
+                return fresh
             }
+            return tab
+        }
+        if !openTabs.isEmpty {
+            activeTabIndex = min(activeTabIndex, openTabs.count - 1)
         }
 
         workspaceFiles = folderManager.loadWorkspaceFiles()
@@ -98,6 +133,9 @@ public class HubViewModel: ObservableObject {
                 fileWatcher?.markSelfWrite(path)
             }
             try folderManager.savePiece(piece)
+            if let path = piece.filePath {
+                dirtyTabPaths.remove(path)
+            }
             try gitService?.autoCommit(
                 message: "Update \(piece.filePath?.lastPathComponent ?? "piece")"
             )
