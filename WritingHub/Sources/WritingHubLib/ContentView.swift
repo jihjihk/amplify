@@ -5,6 +5,8 @@ import MarkupEditor
 
 public struct ContentView: View {
     @StateObject private var viewModel = HubViewModel()
+    @State private var showSidebar: Bool = true
+    @State private var showTerminal: Bool = true
 
     public init() {}
 
@@ -12,11 +14,13 @@ public struct ContentView: View {
         Group {
             if viewModel.isHubOpen {
                 VStack(spacing: 0) {
-                    BrandingHeader(config: viewModel.config)
+                    BrandingHeader(config: viewModel.config, showSidebar: $showSidebar, showTerminal: $showTerminal)
 
                     HSplitView {
-                        Sidebar(viewModel: viewModel)
-                            .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
+                        if showSidebar {
+                            Sidebar(viewModel: viewModel)
+                                .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
+                        }
 
                         VStack(spacing: 0) {
                             if !viewModel.openTabs.isEmpty {
@@ -26,22 +30,24 @@ public struct ContentView: View {
                         }
                         .frame(minWidth: 400)
 
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("Claude Code")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(AmplifyColors.inkTertiary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(AmplifyColors.barBg)
+                        if showTerminal {
+                            VStack(spacing: 0) {
+                                HStack {
+                                    Text("Claude Code")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(AmplifyColors.inkTertiary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(AmplifyColors.barBg)
 
-                            if let root = viewModel.folderManager?.root {
-                                TerminalPanelView(folderPath: root)
+                                if let root = viewModel.folderManager?.root {
+                                    TerminalPanelView(folderPath: root)
+                                }
                             }
+                            .frame(minWidth: 300, idealWidth: 380, maxWidth: 500)
                         }
-                        .frame(minWidth: 300, idealWidth: 380, maxWidth: 500)
                     }
                     StatusBar(viewModel: viewModel)
                 }
@@ -87,6 +93,8 @@ public struct ContentView: View {
 
 struct BrandingHeader: View {
     let config: HubConfig
+    @Binding var showSidebar: Bool
+    @Binding var showTerminal: Bool
 
     var body: some View {
         HStack {
@@ -96,7 +104,32 @@ struct BrandingHeader: View {
             + Text(config.name)
                 .font(AmplifyFonts.instrumentSerifItalic(size: 22))
                 .foregroundStyle(AmplifyColors.inkPrimary)
+
             Spacer()
+
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { showSidebar.toggle() }
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 13))
+                        .foregroundStyle(showSidebar ? AmplifyColors.inkSecondary : AmplifyColors.inkTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Sidebar (⌘\\)")
+                .keyboardShortcut("\\", modifiers: .command)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { showTerminal.toggle() }
+                } label: {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 13))
+                        .foregroundStyle(showTerminal ? AmplifyColors.inkSecondary : AmplifyColors.inkTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Terminal (⌘⌥T)")
+                .keyboardShortcut("t", modifiers: [.command, .option])
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 7)
