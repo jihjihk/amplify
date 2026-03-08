@@ -278,9 +278,20 @@ public struct EditorView: View {
             mark.red   { background: var(--mark-red) !important; }
             mark.green { background: var(--mark-green) !important; }
 
+            :host {
+                display: flex !important;
+                flex-direction: column !important;
+                background: var(--bg) !important;
+            }
+
             /* ── Toolbar ─────────────────────────────────────── */
             .Markup-toolbar {
+                position: sticky !important;
+                top: 0 !important;
+                z-index: 100 !important;
                 background: var(--toolbar-bg) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
                 border-bottom: 1px solid var(--sep) !important;
                 padding: 4px 8px !important;
                 gap: 4px !important;
