@@ -24,7 +24,15 @@ public class HubViewModel: ObservableObject {
         self.skillPack = skill
 
         let manager = FolderManager(root: url)
-        try manager.scaffold(skill: skill, name: name, useCase: useCase)
+        let writinghubDir = url.appendingPathComponent(".writinghub")
+        if !FileManager.default.fileExists(atPath: writinghubDir.path) {
+            try manager.scaffold(skill: skill, name: name, useCase: useCase)
+        } else {
+            // Always keep CLAUDE.md up to date with current name/useCase
+            let claudePath = url.appendingPathComponent("CLAUDE.md")
+            try skill.claudeTemplate(name: name, useCase: useCase)
+                .write(to: claudePath, atomically: true, encoding: .utf8)
+        }
         self.folderManager = manager
 
         let git = GitService(repoPath: url)
