@@ -2,6 +2,11 @@ import Combine
 import Foundation
 import SwiftUI
 
+public struct FileClipboard: Sendable {
+    public let url: URL
+    public let isCut: Bool
+}
+
 @MainActor
 public class HubViewModel: ObservableObject {
     @Published public var folderManager: FolderManager?
@@ -12,6 +17,7 @@ public class HubViewModel: ObservableObject {
     @Published public var isHubOpen: Bool = false
     @Published public var config: HubConfig = HubConfig()
     @Published public var skillPack: SkillPack = .founder
+    @Published public var fileClipboard: FileClipboard? = nil
 
     public var selectedFile: WritingPiece? {
         get { openTabs.indices.contains(activeTabIndex) ? openTabs[activeTabIndex] : nil }
@@ -142,6 +148,33 @@ public class HubViewModel: ObservableObject {
             reload()
         } catch {
             print("[HubViewModel] save error: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - File Clipboard
+
+    public func copyFile(_ url: URL) {
+        fileClipboard = FileClipboard(url: url, isCut: false)
+    }
+
+    public func cutFile(_ url: URL) {
+        fileClipboard = FileClipboard(url: url, isCut: true)
+    }
+
+    public func pasteFile(into folderURL: URL) {
+        guard let clip = fileClipboard else { return }
+        let dest = folderURL.appendingPathComponent(clip.url.lastPathComponent)
+        guard clip.url != dest else { return }
+        do {
+            if clip.isCut {
+                try FileManager.default.moveItem(at: clip.url, to: dest)
+                fileClipboard = nil
+            } else {
+                try FileManager.default.copyItem(at: clip.url, to: dest)
+            }
+            reload()
+        } catch {
+            print("[HubViewModel] paste error: \(error.localizedDescription)")
         }
     }
 

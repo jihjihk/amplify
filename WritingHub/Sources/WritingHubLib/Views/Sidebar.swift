@@ -24,7 +24,8 @@ public struct Sidebar: View {
                             item: item,
                             selectedPath: viewModel.selectedFile?.filePath,
                             onSelect: selectFile,
-                            onReload: { viewModel.reload() }
+                            onReload: { viewModel.reload() },
+                            viewModel: viewModel
                         )
                     }
                 }
@@ -80,27 +81,36 @@ public struct WorkspaceItemRow: View {
     public let selectedPath: URL?
     public let onSelect: (URL) -> Void
     public let onReload: () -> Void
+    public let viewModel: HubViewModel
 
     @State private var isExpanded = true
     @State private var isHovered = false
     @State private var creationMode: CreationMode? = nil
     @State private var newItemName = ""
+    @State private var isRenaming = false
+    @State private var renameText = ""
     @FocusState private var newItemFieldFocused: Bool
+    @FocusState private var renameFocused: Bool
 
     enum CreationMode { case file, folder }
 
     private var isSelected: Bool { selectedPath == item.path }
+    private var isCut: Bool {
+        viewModel.fileClipboard?.isCut == true && viewModel.fileClipboard?.url == item.path
+    }
 
     public init(
         item: WorkspaceItem,
         selectedPath: URL?,
         onSelect: @escaping (URL) -> Void,
-        onReload: @escaping () -> Void
+        onReload: @escaping () -> Void,
+        viewModel: HubViewModel
     ) {
         self.item = item
         self.selectedPath = selectedPath
         self.onSelect = onSelect
         self.onReload = onReload
+        self.viewModel = viewModel
     }
 
     public var body: some View {
@@ -115,7 +125,6 @@ public struct WorkspaceItemRow: View {
 
     private var folderRow: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            // Inline creation field appears at top of folder contents
             if let mode = creationMode {
                 HStack(spacing: 6) {
                     Image(systemName: mode == .file ? "doc.text" : "folder")
@@ -130,14 +139,8 @@ public struct WorkspaceItemRow: View {
                 }
                 .padding(.vertical, 2)
             }
-
             ForEach(item.children) { child in
-                WorkspaceItemRow(
-                    item: child,
-                    selectedPath: selectedPath,
-                    onSelect: onSelect,
-                    onReload: onReload
-                )
+                WorkspaceItemRow(item: child, selectedPath: selectedPath, onSelect: onSelect, onReload: onReload, viewModel: viewModel)
             }
         } label: {
             HStack(spacing: 0) {
@@ -149,9 +152,7 @@ public struct WorkspaceItemRow: View {
                     .onTapGesture { isExpanded.toggle() }
 
                 if isHovered {
-                    Button {
-                        startCreation(.file)
-                    } label: {
+                    Button { startCreation(.file) } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AmplifyColors.inkTertiary)
@@ -165,45 +166,82 @@ public struct WorkspaceItemRow: View {
             .onHover { isHovered = $0 }
             .contextMenu { folderContextMenu }
         }
+        .dropDestination(for: URL.self) { droppedURLs, _ in
+            guard let source = droppedURLs.first else { return false }
+            let dest = item.path.appendingPathComponent(source.lastPathComponent)
+            guard source != dest else { return false }
+            do {
+                try FileManager.default.moveItem(at: source, to: dest)
+                onReload()
+                return true
+            } catch { return false }
+        }
     }
 
     @ViewBuilder
     private var folderContextMenu: some View {
         Button("New File") { startCreation(.file) }
         Button("New Folder") { startCreation(.folder) }
-        Divider()
-        Button("Show in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([item.path])
+        if viewModel.fileClipboard != nil {
+            Divider()
+            Button("Paste") { viewModel.pasteFile(into: item.path) }
         }
+        Divider()
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.path]) }
     }
 
     // MARK: - File Row
 
     private var fileRow: some View {
-        Button {
-            onSelect(item.path)
-        } label: {
-            Label(item.name, systemImage: fileIcon(for: item.name))
-                .font(.callout)
-                .foregroundStyle(isSelected ? AmplifyColors.inkPrimary : AmplifyColors.inkSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+        Group {
+            if isRenaming {
+                TextField("", text: $renameText)
+                    .textFieldStyle(.plain)
+                    .font(.callout)
+                    .focused($renameFocused)
+                    .onSubmit { commitRename() }
+                    .onExitCommand { isRenaming = false }
+                    .padding(.leading, 4)
+            } else {
+                Button {
+                    onSelect(item.path)
+                } label: {
+                    Label(item.name, systemImage: fileIcon(for: item.name))
+                        .font(.callout)
+                        .foregroundStyle(isSelected ? AmplifyColors.inkPrimary : AmplifyColors.inkSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(isCut ? 0.4 : 1.0)
+                .onDrag { NSItemProvider(object: item.path as NSURL) }
+            }
         }
-        .buttonStyle(.plain)
         .listRowBackground(
             isSelected
                 ? RoundedRectangle(cornerRadius: 6).fill(AmplifyColors.selectionTint)
                 : RoundedRectangle(cornerRadius: 6).fill(Color.clear)
         )
-        .contextMenu {
-            Button("Show in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([item.path])
-            }
-            Divider()
-            Button("Delete", role: .destructive) {
-                try? FileManager.default.removeItem(at: item.path)
-                onReload()
-            }
+        .contextMenu { fileContextMenu }
+    }
+
+    @ViewBuilder
+    private var fileContextMenu: some View {
+        Button("Rename") {
+            renameText = item.name
+            isRenaming = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { renameFocused = true }
+        }
+        Button("Duplicate") { duplicateFile() }
+        Divider()
+        Button("Copy") { viewModel.copyFile(item.path) }
+        Button("Cut") { viewModel.cutFile(item.path) }
+        Divider()
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.path]) }
+        Divider()
+        Button("Delete", role: .destructive) {
+            try? FileManager.default.removeItem(at: item.path)
+            onReload()
         }
     }
 
@@ -213,18 +251,14 @@ public struct WorkspaceItemRow: View {
         newItemName = ""
         creationMode = mode
         isExpanded = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            newItemFieldFocused = true
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { newItemFieldFocused = true }
     }
 
     private func commitCreation() {
         guard let mode = creationMode else { return }
         var name = newItemName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { cancelCreation(); return }
-
         if mode == .file && !name.hasSuffix(".md") { name += ".md" }
-
         let target = item.path.appendingPathComponent(name)
         do {
             if mode == .file {
@@ -233,9 +267,7 @@ public struct WorkspaceItemRow: View {
             } else {
                 try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
             }
-        } catch {
-            // silently ignore — file may already exist
-        }
+        } catch {}
         cancelCreation()
         onReload()
     }
@@ -243,7 +275,29 @@ public struct WorkspaceItemRow: View {
     private func cancelCreation() {
         creationMode = nil
         newItemName = ""
-        newItemFieldFocused = false
+    }
+
+    private func commitRename() {
+        let newName = renameText.trimmingCharacters(in: .whitespaces)
+        guard !newName.isEmpty else { isRenaming = false; return }
+        let dest = item.path.deletingLastPathComponent().appendingPathComponent(newName)
+        try? FileManager.default.moveItem(at: item.path, to: dest)
+        isRenaming = false
+        onReload()
+    }
+
+    private func duplicateFile() {
+        let ext = item.path.pathExtension
+        let base = item.path.deletingPathExtension().lastPathComponent
+        let dir = item.path.deletingLastPathComponent()
+        var dest = dir.appendingPathComponent(ext.isEmpty ? "\(base)-copy" : "\(base)-copy.\(ext)")
+        var i = 2
+        while FileManager.default.fileExists(atPath: dest.path) {
+            dest = dir.appendingPathComponent(ext.isEmpty ? "\(base)-copy-\(i)" : "\(base)-copy-\(i).\(ext)")
+            i += 1
+        }
+        try? FileManager.default.copyItem(at: item.path, to: dest)
+        onReload()
     }
 
     private func fileIcon(for name: String) -> String {
