@@ -62,8 +62,11 @@ public struct ContentView: View {
     }
 
     private func openFolder(_ url: URL, skill: SkillPack, name: String) {
-        try? viewModel.openFolder(url, skill: skill)
-        let config = HubConfig(name: name, skillPack: skill)
+        let existing = HubConfig.load(from: url)
+        let useCase = existing?.useCase ?? ""
+        let resolvedName = existing?.name ?? name
+        try? viewModel.openFolder(url, skill: skill, name: resolvedName, useCase: useCase)
+        let config = HubConfig(name: resolvedName, skillPack: skill, useCase: useCase)
         config.save(to: url)
         viewModel.config = config
         viewModel.skillPack = skill
@@ -96,6 +99,7 @@ struct BrandingHeader: View {
 enum OnboardingStep {
     case pickFolder
     case enterName(URL)
+    case enterUseCase(URL, String)       // url, name
     case scaffolded(URL, SkillPack, String)
 }
 
@@ -106,6 +110,19 @@ public struct WelcomeView: View {
     @State private var showPicker = false
     @State private var step: OnboardingStep = .pickFolder
     @State private var userName: String = ""
+    @State private var useCase: String = ""
+    @State private var placeholderIndex: Int = 0
+    @FocusState private var nameFieldFocused: Bool
+
+    private static let useCasePlaceholders = [
+        "e.g. I'm a founder who wants a second brain — somewhere to dump raw ideas, spar on strategy, and turn half-thoughts into sharp writing for LinkedIn and Substack...",
+        "e.g. I'm trying to establish authority online by writing consistently about my field. I want to build an audience on Substack and LinkedIn, but I struggle to find my voice and stay consistent...",
+        "e.g. I want to journal regularly, reflect on what I'm learning, and use AI to help me spot patterns in my thinking and turn insights into essays or threads...",
+    ]
+
+    private var useCasePlaceholder: String {
+        Self.useCasePlaceholders[placeholderIndex % Self.useCasePlaceholders.count]
+    }
 
     public init(onOpenFolder: @escaping (URL, SkillPack, String) -> Void) {
         self.onOpenFolder = onOpenFolder
@@ -117,6 +134,8 @@ public struct WelcomeView: View {
             pickFolderView
         case .enterName(let url):
             enterNameView(url: url)
+        case .enterUseCase(let url, let name):
+            enterUseCaseView(url: url, name: name)
         case .scaffolded(let url, let skill, let name):
             scaffoldedView(url: url, skill: skill, name: name)
         }
@@ -187,16 +206,16 @@ public struct WelcomeView: View {
                     .textFieldStyle(.plain)
                     .opacity(0.01)
                     .frame(maxWidth: 520)
+                    .focused($nameFieldFocused)
             }
+            .onAppear { nameFieldFocused = true }
 
             Spacer().frame(height: 52)
 
             Button("Continue") {
                 let name = userName.trimmingCharacters(in: .whitespaces)
                 let finalName = name.isEmpty ? "you" : name
-                let manager = FolderManager(root: url)
-                try? manager.scaffold(skill: .founder)
-                step = .scaffolded(url, .founder, finalName)
+                step = .enterUseCase(url, finalName)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -206,7 +225,80 @@ public struct WelcomeView: View {
         .padding(40)
     }
 
-    // MARK: - Step 3: Scaffolded Confirmation
+    // MARK: - Step 3: Enter Use Case
+
+    private func enterUseCaseView(url: URL, name: String) -> some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("What do you write?")
+                        .font(AmplifyFonts.instrumentSerif(size: 28))
+                        .foregroundStyle(AmplifyColors.inkPrimary)
+
+                    Text("Who's your audience, what topics, what's the goal? A few sentences is enough.")
+                        .font(.body)
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                }
+
+                ZStack(alignment: .topLeading) {
+                    // Placeholder hint — rotates through common use cases
+                    if useCase.isEmpty {
+                        Text(useCasePlaceholder)
+                            .font(.body)
+                            .foregroundStyle(AmplifyColors.inkTertiary)
+                            .padding(.top, 8)
+                            .padding(.leading, 4)
+                            .onTapGesture { placeholderIndex += 1 }
+                    }
+
+                    TextEditor(text: $useCase)
+                        .font(.body)
+                        .foregroundStyle(AmplifyColors.inkPrimary)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        .frame(minHeight: 120, maxHeight: 200)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(AmplifyColors.barBg)
+                )
+
+                HStack {
+                    Button("Skip") {
+                        scaffold(url: url, name: name, useCase: "")
+                    }
+                    .foregroundStyle(AmplifyColors.inkTertiary)
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    Button("Continue") {
+                        scaffold(url: url, name: name, useCase: useCase.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(useCase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .frame(maxWidth: 520)
+
+            Spacer()
+        }
+        .padding(40)
+    }
+
+    private func scaffold(url: URL, name: String, useCase: String) {
+        let manager = FolderManager(root: url)
+        try? manager.scaffold(skill: .founder, name: name, useCase: useCase)
+        // Persist so reopening the workspace restores name + use case
+        HubConfig(name: name, skillPack: .founder, useCase: useCase).save(to: url)
+        step = .scaffolded(url, .founder, name)
+    }
+
+    // MARK: - Step 4: Scaffolded Confirmation
 
     private func scaffoldedView(url: URL, skill: SkillPack, name: String) -> some View {
         VStack(spacing: 24) {

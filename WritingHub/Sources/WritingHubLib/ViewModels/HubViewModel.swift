@@ -20,11 +20,11 @@ public class HubViewModel: ObservableObject {
     // MARK: - Open Folder
 
     /// Scaffold the folder structure, initialize git, start the file watcher, and load files.
-    public func openFolder(_ url: URL, skill: SkillPack = .founder) throws {
+    public func openFolder(_ url: URL, skill: SkillPack = .founder, name: String = "you", useCase: String = "") throws {
         self.skillPack = skill
 
         let manager = FolderManager(root: url)
-        try manager.scaffold(skill: skill)
+        try manager.scaffold(skill: skill, name: name, useCase: useCase)
         self.folderManager = manager
 
         let git = GitService(repoPath: url)

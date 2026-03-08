@@ -85,7 +85,19 @@ struct FolderManagerTests {
         #expect(claudeFile != nil)
     }
 
-    // MARK: - Test 4: savePiece writes to disk
+    // MARK: - Test 4: scaffold embeds name and useCase
+
+    @Test("scaffold embeds name and useCase in CLAUDE.md")
+    func testScaffoldEmbedsMeta() throws {
+        defer { cleanup() }
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
+        let content = try String(contentsOf: tempDir.appendingPathComponent("CLAUDE.md"), encoding: .utf8)
+        #expect(content.contains("Ji"))
+        #expect(content.contains("Founder building audience"))
+    }
+
+    // MARK: - Test 5: savePiece writes to disk
 
     @Test("savePiece writes piece to disk with updated edited date")
     func testSavePiece() throws {
