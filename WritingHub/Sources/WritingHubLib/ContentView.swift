@@ -18,8 +18,13 @@ public struct ContentView: View {
                         Sidebar(viewModel: viewModel)
                             .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
 
-                        EditorView(viewModel: viewModel)
-                            .frame(minWidth: 400)
+                        VStack(spacing: 0) {
+                            if !viewModel.openTabs.isEmpty {
+                                TabBar(viewModel: viewModel)
+                            }
+                            EditorView(viewModel: viewModel)
+                        }
+                        .frame(minWidth: 400)
 
                         VStack(spacing: 0) {
                             HStack {
@@ -48,6 +53,11 @@ public struct ContentView: View {
         }
         .frame(minWidth: 900, minHeight: 600)
         .background(AmplifyColors.parchment)
+        .background(
+            Button("") { viewModel.closeActiveTab() }
+                .keyboardShortcut("w", modifiers: .command)
+                .hidden()
+        )
         .tint(AmplifyColors.accent)
         .navigationTitle(viewModel.isHubOpen
             ? viewModel.folderManager?.root.lastPathComponent ?? "Amplify"
