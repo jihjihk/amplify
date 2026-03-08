@@ -1,6 +1,7 @@
 import SwiftUI
 import MarkupEditor
 import Combine
+import WebKit
 
 /// A WYSIWYG editor panel that displays and edits a selected WritingPiece.
 ///
@@ -15,6 +16,10 @@ public struct EditorView: View {
     @State private var saveSubject = PassthroughSubject<String, Never>()
     @State private var saveCancellable: AnyCancellable?
     @State private var isSaving = false
+
+    @State private var showFind = false
+    @State private var findQuery = ""
+    @FocusState private var findFieldFocused: Bool
 
     public init(viewModel: HubViewModel) {
         self.viewModel = viewModel
@@ -40,8 +45,41 @@ public struct EditorView: View {
                 placeholderView()
                     .background(AmplifyColors.surface)
             }
+
+            // Find bar overlay
+            if showFind {
+                FindBar(
+                    query: $findQuery,
+                    isFocused: $findFieldFocused,
+                    onNext: { editorDelegate.findText(findQuery, forward: true) },
+                    onPrev: { editorDelegate.findText(findQuery, forward: false) },
+                    onDismiss: {
+                        withAnimation { showFind = false }
+                        findQuery = ""
+                        editorDelegate.clearFind()
+                    }
+                )
+                .padding(.top, viewModel.selectedFile != nil ? 56 : 0)
+                .padding(.trailing, 16)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(10)
+            }
         }
-        .background(AmplifyColors.surface)
+        .background(
+            Button("") {
+                withAnimation(.easeInOut(duration: 0.15)) { showFind.toggle() }
+                if showFind {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        findFieldFocused = true
+                    }
+                } else {
+                    editorDelegate.clearFind()
+                }
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .hidden()
+        )
         .onAppear {
             setupDebouncedSave()
         }
@@ -456,12 +494,32 @@ public struct EditorView: View {
 /// async-fetches the current HTML, and publishes it for the save pipeline.
 final class EditorInputDelegate: ObservableObject, MarkupDelegate {
     @Published var capturedHTML: String = ""
+    weak var webView: MarkupWKWebView?
 
     func markupInput(_ view: MarkupWKWebView) {
         view.getHtml(pretty: false, clean: true) { [weak self] html in
             guard let self, let html else { return }
             DispatchQueue.main.async { self.capturedHTML = html }
         }
+    }
+
+    func markupDidLoad(_ view: MarkupWKWebView, handler: (() -> Void)?) {
+        webView = view
+        handler?()
+    }
+
+    func findText(_ query: String, forward: Bool = true) {
+        guard !query.isEmpty, let webView else { return }
+        let config = WKFindConfiguration()
+        config.backwards = !forward
+        config.wraps = true
+        config.caseSensitive = false
+        webView.find(query, configuration: config) { _ in }
+    }
+
+    func clearFind() {
+        guard let webView else { return }
+        webView.find("", configuration: WKFindConfiguration()) { _ in }
     }
 }
 
@@ -501,5 +559,57 @@ struct StarterCommandRow: View {
 
             Spacer()
         }
+    }
+}
+
+// MARK: - FindBar
+
+struct FindBar: View {
+    @Binding var query: String
+    @FocusState.Binding var isFocused: Bool
+    let onNext: () -> Void
+    let onPrev: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("Find", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .focused($isFocused)
+                .frame(width: 180)
+                .onSubmit { onNext() }
+                .onChange(of: query) { _, _ in onNext() }
+
+            Button(action: onPrev) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Previous match")
+
+            Button(action: onNext) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Next match")
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+        }
+        .foregroundStyle(AmplifyColors.inkSecondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(AmplifyColors.barBg)
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        )
+        .onExitCommand { onDismiss() }
     }
 }
