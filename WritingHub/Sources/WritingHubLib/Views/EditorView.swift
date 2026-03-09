@@ -35,7 +35,6 @@ public struct EditorView: View {
                 }
                 MarkupEditorView(
                     markupDelegate: editorDelegate,
-                    userScripts: [Self.editorStyleScript],
                     html: $htmlContent
                 )
             }
@@ -401,49 +400,33 @@ public struct EditorView: View {
             }
         """
 
-        // MarkupEditor renders as a `<markup-editor>` web component with an open shadow root.
-        // We inject a <style> tag directly into the shadow root DOM — this persists even when
-        // MarkupEditor resets its adoptedStyleSheets during async init. A MutationObserver on
-        // document watches for the custom element to appear; a second observer on the shadow root
-        // re-injects if our tag is ever removed.
+        // Called via evaluateJavaScript from markupDidLoad — by that point MarkupEditor's
+        // custom element connectedCallback has fully run and the shadow root is initialized.
+        // We inject a <style> tag into the shadow root. A MutationObserver guards against
+        // the tag being removed if MarkupEditor ever re-initializes its shadow DOM.
         return """
         (function() {
             var css = \(escapeJSString(css));
             var TAG_ID = '__amplify-theme';
 
             function injectStyle(sr) {
-                if (sr.getElementById && sr.getElementById(TAG_ID)) return;
                 var existing = sr.querySelector('#' + TAG_ID);
-                if (existing) existing.remove();
+                if (existing) return;
                 var style = document.createElement('style');
                 style.id = TAG_ID;
                 style.textContent = css;
                 sr.appendChild(style);
             }
 
-            function tryInject() {
-                var host = document.querySelector('markup-editor');
-                if (!host || !host.shadowRoot) return false;
-                injectStyle(host.shadowRoot);
-                // Watch shadow root for removal of our tag (e.g. if MarkupEditor clears its DOM)
-                var srObs = new MutationObserver(function() {
-                    if (!host.shadowRoot.querySelector('#' + TAG_ID)) {
-                        injectStyle(host.shadowRoot);
-                    }
-                });
-                srObs.observe(host.shadowRoot, { childList: true, subtree: false });
-                return true;
-            }
+            var host = document.querySelector('markup-editor');
+            if (!host || !host.shadowRoot) return;
+            var sr = host.shadowRoot;
+            injectStyle(sr);
 
-            if (!tryInject()) {
-                var docObs = new MutationObserver(function(_, o) {
-                    if (tryInject()) o.disconnect();
-                });
-                docObs.observe(document.documentElement, { childList: true, subtree: true });
-            }
-            // Belt-and-suspenders: re-apply after MarkupEditor's async init completes
-            setTimeout(tryInject, 200);
-            setTimeout(tryInject, 800);
+            // Re-inject if MarkupEditor removes our tag during content reloads
+            new MutationObserver(function() {
+                if (!sr.querySelector('#' + TAG_ID)) injectStyle(sr);
+            }).observe(sr, { childList: true, subtree: false });
         })();
         """
     }()
@@ -527,6 +510,11 @@ final class EditorInputDelegate: ObservableObject, MarkupDelegate {
     func markupDidLoad(_ view: MarkupWKWebView, handler: (() -> Void)?) {
         webView = view
         handler?()
+        // Inject theme now — markupDidLoad fires after MarkupEditor's full JS init,
+        // so the shadow root is guaranteed to be set up. This avoids the race condition
+        // that caused userScripts injection (which runs at documentEnd, before the
+        // custom element's connectedCallback) to be overwritten by MarkupEditor's init.
+        view.evaluateJavaScript(EditorView.editorStyleScript) { _, _ in }
     }
 
     func findText(_ query: String, forward: Bool = true) {

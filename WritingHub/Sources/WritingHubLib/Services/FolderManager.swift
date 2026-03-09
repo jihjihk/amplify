@@ -10,18 +10,15 @@ public class FolderManager: ObservableObject {
 
     // MARK: - Scaffold
 
-    /// Creates `.writinghub/` and writes CLAUDE.md. Accepts an optional skill pack
-    /// to create skill-specific folders and a tailored CLAUDE.md template.
-    public func scaffold(skill: SkillPack = .founder) throws {
+    /// Creates `.writinghub/`, skill folders, and a personalized CLAUDE.md.
+    public func scaffold(skill: SkillPack = .founder, name: String = "you", useCase: String = "") throws {
         let fm = FileManager.default
 
-        // Create .writinghub/
         try fm.createDirectory(
             at: root.appendingPathComponent(".writinghub"),
             withIntermediateDirectories: true
         )
 
-        // Create skill-specific folders
         for folder in skill.folders {
             try fm.createDirectory(
                 at: root.appendingPathComponent(folder),
@@ -29,9 +26,9 @@ public class FolderManager: ObservableObject {
             )
         }
 
-        // Write the skill-specific CLAUDE.md template
         let claudePath = root.appendingPathComponent("CLAUDE.md")
-        try skill.claudeTemplate.write(to: claudePath, atomically: true, encoding: .utf8)
+        try skill.claudeTemplate(name: name, useCase: useCase)
+            .write(to: claudePath, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Save Piece

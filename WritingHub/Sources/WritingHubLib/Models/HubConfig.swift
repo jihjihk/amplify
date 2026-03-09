@@ -7,10 +7,12 @@ import Foundation
 public struct HubConfig: Codable, Sendable {
     public var name: String
     public var skillPack: SkillPack
+    public var useCase: String
 
-    public init(name: String = "you", skillPack: SkillPack = .founder) {
+    public init(name: String = "you", skillPack: SkillPack = .founder, useCase: String = "") {
         self.name = name
         self.skillPack = skillPack
+        self.useCase = useCase
     }
 
     /// Load config from `.writinghub/config.json`. Returns nil if not found.

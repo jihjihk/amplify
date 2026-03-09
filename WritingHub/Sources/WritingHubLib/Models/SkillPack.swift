@@ -84,12 +84,8 @@ public enum SkillPack: String, CaseIterable, Codable, Identifiable, Sendable {
         }
     }
 
-    /// The CLAUDE.md template content for this skill pack.
-    public var claudeTemplate: String {
-        switch self {
-        case .founder: return CLAUDETemplate.founder
-        case .hobbyWriter: return CLAUDETemplate.hobbyWriter
-        case .marketingManager: return CLAUDETemplate.marketingManager
-        }
+    /// Generates a personalized CLAUDE.md for this skill pack.
+    public func claudeTemplate(name: String, useCase: String) -> String {
+        CLAUDETemplate.generate(name: name, useCase: useCase)
     }
 }
