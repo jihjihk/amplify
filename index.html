@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amplify - The writing app for AI native writers</title>
+  <meta name="description" content="Amplify is a free macOS writing app and IDE for writers. Works natively with Claude Code. All files stay local, no API key required, more token-efficient than Notion or Obsidian MCP." />
+  <meta name="keywords" content="writing app, Claude Code, AI writing, macOS writing app, markdown editor, voice DNA, token efficient, local files, open source writing tool" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Amplify - The writing app for AI native writers" />
+  <meta property="og:description" content="An IDE for writers and thinkers. Works with Claude Code. All files local, no API key, more token-efficient than Notion or Obsidian MCP." />
+  <meta property="og:image" content="./logo.png" />
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Amplify - The writing app for AI native writers" />
+  <meta name="twitter:description" content="An IDE for writers and thinkers. Works with Claude Code. All files local, no API key, more token-efficient than Notion or Obsidian MCP." />
+  <meta name="twitter:image" content="./logo.png" />
+
+  <!-- LLM crawlers -->
+  <link rel="alternate" type="text/plain" title="LLMs.txt" href="/llms.txt" />
+
+  <!-- Structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Amplify",
+    "description": "A free, open-source macOS writing app and IDE for writers and thinkers. Works natively with Claude Code. All files are local Markdown, no API key required, more token-efficient than Notion MCP or Obsidian MCP.",
+    "applicationCategory": "ProductivityApplication",
+    "operatingSystem": "macOS 13+",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "url": "https://amplifywriting.app",
+    "downloadUrl": "https://github.com/jihjihk/amplify/releases",
+    "softwareVersion": "1.0",
+    "license": "https://github.com/jihjihk/amplify/blob/main/LICENSE",
+    "codeRepository": "https://github.com/jihjihk/amplify",
+    "featureList": [
+      "Native Claude Code integration",
+      "Local Markdown file storage",
+      "Voice DNA generation",
+      "No API key required",
+      "Token-efficient context window usage",
+      "Built-in terminal",
+      "File tree sidebar",
+      "Rich text Markdown editor"
+    ],
+    "keywords": "writing app, Claude Code, AI agent, markdown editor, voice DNA, local files, token efficient"
+  }
+  </script>
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/x-icon" href="./favicon/favicon.ico" />
+  <link rel="icon" type="image/svg+xml" href="./favicon/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="96x96" href="./favicon/favicon-96x96.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Tokens ─────────────────────────────── */
+    :root {
+      --parchment:    #F7F4EF;
+      --surface:      #EFEAE0;
+      --bar:          #F2EDE4;
+      --ink:          #1A1713;
+      --ink-2:        #2C2520;
+      --ink-3:        #6B6157;
+      --ink-4:        #9C9188;
+      --sep:          rgba(26,23,19,0.10);
+      --accent:       #5B7FA6;
+      --accent-light: rgba(91,127,166,0.12);
+      --warm:         rgba(212,165,80,0.18);
+      --radius:       14px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--parchment);
+      color: var(--ink-2);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Typography helpers ─────────────────── */
+    .serif         { font-family: 'Instrument Serif', Georgia, serif; }
+    .serif-italic  { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; }
+
+    /* ── Nav ────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      height: 56px;
+      background: rgba(247,244,239,0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--sep);
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .nav-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      object-fit: cover;
+    }
+    .nav-name {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: 20px;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--ink-3);
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    .btn-ghost:hover {
+      background: var(--surface);
+      color: var(--ink-2);
+    }
+    .btn-ghost svg { flex-shrink: 0; }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 20px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      text-decoration: none;
+      transition: opacity 0.15s, transform 0.12s;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+
+    /* ── Hero ───────────────────────────────── */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 100px 24px 80px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-light);
+      padding: 5px 14px;
+      border-radius: 100px;
+      margin-bottom: 28px;
+    }
+
+    .hero-logo {
+      width: 96px;
+      height: 96px;
+      border-radius: 22px;
+      object-fit: cover;
+      margin-bottom: 36px;
+      box-shadow: 0 8px 32px rgba(26,23,19,0.12), 0 2px 8px rgba(26,23,19,0.08);
+    }
+
+    .hero-title {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: clamp(42px, 6vw, 68px);
+      font-weight: 400;
+      line-height: 1.1;
+      letter-spacing: -0.025em;
+      color: var(--ink);
+      margin-bottom: 24px;
+    }
+    .hero-title em {
+      font-style: italic;
+      color: var(--ink-3);
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 19px);
+      color: var(--ink-3);
+      max-width: 560px;
+      line-height: 1.7;
+      margin-bottom: 44px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .hero-note {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--ink-4);
+    }
+
+    /* ── Divider ────────────────────────────── */
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: var(--sep);
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* ── Pills row ──────────────────────────── */
+    .pills-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 40px 24px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink-3);
+      background: var(--bar);
+      border: 1px solid var(--sep);
+      border-radius: 100px;
+      padding: 6px 14px;
+    }
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* ── Section ────────────────────────────── */
+    .section {
+      padding: 80px 24px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 400;
+      color: var(--ink);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .section-body {
+      font-size: 16.5px;
+      color: var(--ink-3);
+      max-width: 500px;
+      line-height: 1.75;
+    }
+
+    /* ── Features grid ──────────────────────── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 56px;
+    }
+
+    .feature-card {
+      background: var(--bar);
+      border: 1px solid var(--sep);
+      border-radius: var(--radius);
+      padding: 28px 26px;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .feature-card:hover {
+      box-shadow: 0 4px 20px rgba(26,23,19,0.07);
+      transform: translateY(-2px);
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      font-size: 20px;
+      background: var(--surface);
+    }
+
+    .feature-title {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: 19px;
+      font-weight: 400;
+      color: var(--ink);
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-body {
+      font-size: 14px;
+      color: var(--ink-3);
+      line-height: 1.65;
+    }
+
+    /* ── Callout ────────────────────────────── */
+    .callout {
+      background: var(--bar);
+      border: 1px solid var(--sep);
+      border-radius: 20px;
+      padding: 60px 56px;
+      margin: 0 24px;
+      max-width: 960px;
+      margin-left: auto;
+      margin-right: auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .callout-eyebrow {
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+
+    .callout-title {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: clamp(26px, 3vw, 36px);
+      font-weight: 400;
+      color: var(--ink);
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .callout-body {
+      font-size: 15.5px;
+      color: var(--ink-3);
+      line-height: 1.75;
+    }
+
+    .compare-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .compare-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 14.5px;
+      color: var(--ink-3);
+    }
+    .compare-list li strong {
+      color: var(--ink-2);
+      font-weight: 600;
+    }
+    .check {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .check svg { color: var(--accent); }
+
+    /* ── Voice DNA section ──────────────────── */
+    .voice-section {
+      padding: 80px 24px;
+      max-width: 960px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+    }
+
+    .code-block {
+      background: var(--ink);
+      border-radius: var(--radius);
+      padding: 28px 30px;
+      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+      font-size: 12.5px;
+      line-height: 1.8;
+      color: #C8C3BA;
+      overflow-x: auto;
+    }
+    .code-block .cmd  { color: #7FA8CC; }
+    .code-block .cmt  { color: #6B6157; font-style: italic; }
+    .code-block .str  { color: #C9A97A; }
+    .code-block .key  { color: #9BBFA3; }
+
+    /* ── CTA strip ──────────────────────────── */
+    .cta-strip {
+      padding: 100px 24px;
+      text-align: center;
+    }
+    .cta-strip .section-title { margin-bottom: 12px; }
+    .cta-strip .section-body  { margin: 0 auto 40px; }
+
+    /* ── Footer ─────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--sep);
+      padding: 32px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+    }
+    .footer-logo {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      object-fit: cover;
+    }
+    .footer-name {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: 16px;
+      color: var(--ink-3);
+    }
+
+    .footer-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .footer-links a {
+      font-size: 13px;
+      color: var(--ink-4);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .footer-links a:hover { color: var(--ink-3); }
+
+    /* ── Animations ─────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(22px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.88); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    .anim-fade-up   { opacity: 0; }
+    .anim-fade-in   { opacity: 0; }
+    .anim-scale-in  { opacity: 0; }
+    .anim-ready.anim-fade-up  { animation: fadeUp  0.6s cubic-bezier(0.22,1,0.36,1) forwards; }
+    .anim-ready.anim-fade-in  { animation: fadeIn  0.5s ease forwards; }
+    .anim-ready.anim-scale-in { animation: scaleIn 0.55s cubic-bezier(0.22,1,0.36,1) forwards; }
+
+    /* stagger delays */
+    .delay-1 { animation-delay: 0.05s !important; }
+    .delay-2 { animation-delay: 0.12s !important; }
+    .delay-3 { animation-delay: 0.20s !important; }
+    .delay-4 { animation-delay: 0.28s !important; }
+    .delay-5 { animation-delay: 0.36s !important; }
+    .delay-6 { animation-delay: 0.44s !important; }
+
+    /* Feature cards hover lift already defined; add subtle border glow */
+    .feature-card {
+      transition: box-shadow 0.25s, transform 0.25s, border-color 0.25s;
+    }
+    .feature-card:hover {
+      border-color: rgba(91,127,166,0.3);
+      box-shadow: 0 6px 28px rgba(26,23,19,0.08);
+    }
+
+    /* Pill shimmer on hover */
+    .pill { transition: background 0.2s, border-color 0.2s; cursor: default; }
+    .pill:hover { background: var(--surface); border-color: rgba(91,127,166,0.3); }
+
+    /* ── Responsive ─────────────────────────── */
+    @media (max-width: 680px) {
+      nav { padding: 0 20px; }
+      .callout {
+        grid-template-columns: 1fr;
+        padding: 40px 28px;
+        gap: 32px;
+      }
+      .voice-section {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+      footer {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 28px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Nav ──────────────────────────────────── -->
+  <nav>
+    <a href="https://github.com/jihjihk/amplify/releases/download/v1.0.0/Amplify.dmg" class="nav-brand">
+      <img src="./logo.png" alt="Amplify logo" class="nav-logo" />
+      <span class="nav-name">Amplify</span>
+    </a>
+    <div class="nav-links">
+      <a href="https://github.com/jihjihk/amplify" class="btn-ghost" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        GitHub
+      </a>
+      <a href="https://github.com/jihjihk/amplify/releases/download/v1.0.0/Amplify.dmg" class="btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download
+      </a>
+    </div>
+  </nav>
+
+  <!-- ── Hero ─────────────────────────────────── -->
+  <section class="hero">
+    <img src="./logo.png" alt="Amplify app icon" class="hero-logo anim-scale-in delay-2" />
+
+    <h1 class="hero-title anim-fade-up delay-3">
+      The writing app for<br />
+      <em>AI native writers</em>
+    </h1>
+
+    <p class="hero-sub anim-fade-up delay-4">
+      An IDE for writers and thinkers. Write with Claude Code, keep every file local,
+      and let AI amplify your voice - not replace it.
+    </p>
+
+    <div class="hero-actions anim-fade-up delay-5">
+      <a href="https://github.com/jihjihk/amplify/releases/download/v1.0.0/Amplify.dmg" class="btn-primary" id="download">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download for Mac
+      </a>
+      <a href="https://github.com/jihjihk/amplify" class="btn-ghost" target="_blank" rel="noopener">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        View on GitHub
+      </a>
+    </div>
+    <p class="hero-note anim-fade-in delay-6">macOS 14+ · Free forever · No account required</p>
+  </section>
+
+  <!-- ── Hero demo ────────────────────────────── -->
+  <div style="padding: 0 24px 80px; max-width: 960px; margin: 0 auto;" class="anim-fade-up">
+    <div style="
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--sep);
+      box-shadow: 0 8px 48px rgba(26,23,19,0.10), 0 2px 12px rgba(26,23,19,0.06);
+    ">
+      <img src="./demo.gif" alt="Amplify app demo" style="width: 100%; display: block;" />
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ── Features ──────────────────────────────── -->
+  <section class="section">
+    <p class="section-label">Why Amplify</p>
+    <h2 class="section-title">Writing with AI,<br /><em class="serif-italic">done right</em></h2>
+    <p class="section-body">
+      Most writing tools bolt AI on top. Amplify is built around it - a calm,
+      focused workspace where your agent does the heavy lifting while your voice stays yours.
+    </p>
+
+    <div class="features-grid">
+      <div class="feature-card anim-fade-up delay-1">
+        <div class="feature-icon">✍️</div>
+        <h3 class="feature-title">IDE for writers</h3>
+        <p class="feature-body">
+          File tree, rich text editor, and a built-in Claude Code terminal - everything
+          in one window. No switching apps.
+        </p>
+      </div>
+
+      <div class="feature-card anim-fade-up delay-2">
+        <div class="feature-icon">🔑</div>
+        <h3 class="feature-title">Bring your own subscription</h3>
+        <p class="feature-body">
+          Amplify uses Claude Code, which you already have. No separate API key,
+          no extra billing, no account to create.
+        </p>
+      </div>
+
+      <div class="feature-card anim-fade-up delay-3">
+        <div class="feature-icon">🔒</div>
+        <h3 class="feature-title">100% local &amp; private</h3>
+        <p class="feature-body">
+          Your notes never touch a server. Every file lives on your Mac, in plain
+          Markdown. You own your writing completely.
+        </p>
+      </div>
+
+      <div class="feature-card anim-fade-up delay-4">
+        <div class="feature-icon">🧬</div>
+        <h3 class="feature-title">Voice DNA</h3>
+        <p class="feature-body">
+          Ships with a CLAUDE.md that teaches your agent to write like <em>you</em>:
+          tone, rhythm, vocabulary. Run one command and it builds your profile.
+        </p>
+      </div>
+
+      <div class="feature-card anim-fade-up delay-5">
+        <div class="feature-icon">⚡</div>
+        <h3 class="feature-title">Token efficient</h3>
+        <p class="feature-body">
+          Plain Markdown files cost a fraction of the tokens that Notion or Obsidian MCP
+          connections consume. Your context window goes further.
+        </p>
+      </div>
+
+      <div class="feature-card anim-fade-up delay-6">
+        <div class="feature-icon">🌿</div>
+        <h3 class="feature-title">Calm by design</h3>
+        <p class="feature-body">
+          Parchment background, Instrument Serif typography, no notifications.
+          Built for long thinking sessions, not quick takes.
+        </p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── CTA ───────────────────────────────────── -->
+  <section class="cta-strip">
+    <div class="divider" style="margin-bottom: 80px;"></div>
+    <p class="section-label" style="text-align:center;">Get started</p>
+    <h2 class="section-title serif" style="text-align:center;">
+      Amplifying <em class="serif-italic">your voice</em>
+    </h2>
+    <p class="section-body" style="text-align:center; margin: 0 auto 40px;">
+      Download the app, open a folder, and ask Claude to create your voice DNA.
+      You'll have a first draft in minutes.
+    </p>
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <a href="https://github.com/jihjihk/amplify/releases/download/v1.0.0/Amplify.dmg" class="btn-primary" style="font-size:15px; padding:12px 28px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download for Mac
+      </a>
+      <a href="https://github.com/jihjihk/amplify" class="btn-ghost" style="font-size:15px; padding:12px 20px;" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        Star on GitHub
+      </a>
+    </div>
+    <p class="hero-note" style="margin-top:20px;">macOS 14 Sonoma or later · Apple Silicon &amp; Intel</p>
+  </section>
+
+  <!-- ── Footer ────────────────────────────────── -->
+  <footer>
+    <a href="https://github.com/jihjihk/amplify/releases/download/v1.0.0/Amplify.dmg" class="footer-brand">
+      <img src="./logo.png" alt="Amplify" class="footer-logo" />
+      <span class="footer-name">Amplify</span>
+    </a>
+    <div class="footer-links">
+      <a href="https://github.com/jihjihk/amplify" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/jihjihk/amplify/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/jihjihk/amplify/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="https://github.com/jihjihk/amplify/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+    </div>
+  </footer>
+
+  <script>
+    // Hero elements animate immediately on load
+    document.querySelectorAll('.hero .anim-fade-up, .hero .anim-fade-in, .hero .anim-scale-in')
+      .forEach(el => el.classList.add('anim-ready'));
+
+    // All other .anim-* elements trigger when they scroll into view
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('anim-ready');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll(
+      '.anim-fade-up:not(.anim-ready), .anim-fade-in:not(.anim-ready), .anim-scale-in:not(.anim-ready)'
+    ).forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>
