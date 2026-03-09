@@ -323,7 +323,7 @@ public struct EditorView: View {
             }
 
             /* ── Toolbar ─────────────────────────────────────── */
-            .Markup-toolbar {
+            .Markup-toolbar, .Markup-toolbar-more {
                 position: sticky !important;
                 top: 0 !important;
                 z-index: 100 !important;
@@ -336,6 +336,19 @@ public struct EditorView: View {
                 align-items: center !important;
                 color: var(--ink-4) !important;
                 fill: var(--ink-4) !important;
+            }
+            /* Dropdowns inherit from toolbar — make explicit so they're never transparent */
+            .Markup-menu-dropdown-menu,
+            .Markup-menu-submenu,
+            .Markup-menu-tablesizer {
+                background: var(--toolbar-bg) !important;
+                border: 1px solid var(--sep) !important;
+            }
+            .Markup-menu-dropdown-wrap,
+            .Markup-menu-dropdown-icon-wrap,
+            .Markup-menu-dropdown-icon-wrap-noindicator,
+            .Markup-menu-dropdown {
+                background: var(--toolbar-bg) !important;
             }
             .Markup-menuitem {
                 width: 28px !important;
@@ -389,40 +402,48 @@ public struct EditorView: View {
         """
 
         // MarkupEditor renders as a `<markup-editor>` web component with an open shadow root.
-        // Styles must be injected into shadowRoot.adoptedStyleSheets — document-level styles
-        // and document.head <style> tags have zero effect inside the shadow DOM.
+        // We inject a <style> tag directly into the shadow root DOM — this persists even when
+        // MarkupEditor resets its adoptedStyleSheets during async init. A MutationObserver on
+        // document watches for the custom element to appear; a second observer on the shadow root
+        // re-injects if our tag is ever removed.
         return """
         (function() {
             var css = \(escapeJSString(css));
+            var TAG_ID = '__amplify-theme';
 
-            function injectIntoShadow() {
+            function injectStyle(sr) {
+                if (sr.getElementById && sr.getElementById(TAG_ID)) return;
+                var existing = sr.querySelector('#' + TAG_ID);
+                if (existing) existing.remove();
+                var style = document.createElement('style');
+                style.id = TAG_ID;
+                style.textContent = css;
+                sr.appendChild(style);
+            }
+
+            function tryInject() {
                 var host = document.querySelector('markup-editor');
                 if (!host || !host.shadowRoot) return false;
-                var sr = host.shadowRoot;
-                // Remove any prior amplify sheet, keep MarkupEditor's built-in sheets
-                var kept = [];
-                for (var i = 0; i < sr.adoptedStyleSheets.length; i++) {
-                    if (!sr.adoptedStyleSheets[i].__amplify) kept.push(sr.adoptedStyleSheets[i]);
-                }
-                var sheet = new CSSStyleSheet();
-                sheet.__amplify = true;
-                sheet.replaceSync(css);
-                // Append at end → wins cascade over MarkupEditor's sheets
-                sr.adoptedStyleSheets = kept.concat([sheet]);
+                injectStyle(host.shadowRoot);
+                // Watch shadow root for removal of our tag (e.g. if MarkupEditor clears its DOM)
+                var srObs = new MutationObserver(function() {
+                    if (!host.shadowRoot.querySelector('#' + TAG_ID)) {
+                        injectStyle(host.shadowRoot);
+                    }
+                });
+                srObs.observe(host.shadowRoot, { childList: true, subtree: false });
                 return true;
             }
 
-            // Try immediately — connectedCallback may have already run
-            if (!injectIntoShadow()) {
-                // Custom element not yet upgraded; wait for it
-                var obs = new MutationObserver(function(_, o) {
-                    if (injectIntoShadow()) o.disconnect();
+            if (!tryInject()) {
+                var docObs = new MutationObserver(function(_, o) {
+                    if (tryInject()) o.disconnect();
                 });
-                obs.observe(document.documentElement, { childList: true, subtree: true });
+                docObs.observe(document.documentElement, { childList: true, subtree: true });
             }
-
-            // Re-apply after MarkupEditor's async init (it resets adoptedStyleSheets in connectedCallback)
-            setTimeout(injectIntoShadow, 300);
+            // Belt-and-suspenders: re-apply after MarkupEditor's async init completes
+            setTimeout(tryInject, 200);
+            setTimeout(tryInject, 800);
         })();
         """
     }()

@@ -30,24 +30,26 @@ public struct ContentView: View {
                         }
                         .frame(minWidth: 400)
 
-                        if showTerminal {
-                            VStack(spacing: 0) {
-                                HStack {
-                                    Text("Claude Code")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(AmplifyColors.inkTertiary)
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(AmplifyColors.barBg)
-
-                                if let root = viewModel.folderManager?.root {
-                                    TerminalPanelView(folderPath: root)
-                                }
+                        VStack(spacing: 0) {
+                            HStack {
+                                Text("Claude Code")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(AmplifyColors.inkTertiary)
+                                Spacer()
                             }
-                            .frame(minWidth: 300, idealWidth: 380, maxWidth: 500)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(AmplifyColors.barBg)
+
+                            if let root = viewModel.folderManager?.root {
+                                TerminalPanelView(folderPath: root)
+                            }
                         }
+                        .frame(minWidth: showTerminal ? 300 : 0,
+                               idealWidth: 380,
+                               maxWidth: showTerminal ? 500 : 0)
+                        .opacity(showTerminal ? 1 : 0)
+                        .clipped()
                     }
                     StatusBar(viewModel: viewModel)
                 }
