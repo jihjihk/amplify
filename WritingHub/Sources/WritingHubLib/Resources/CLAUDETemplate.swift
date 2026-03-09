@@ -6,6 +6,23 @@ enum CLAUDETemplate {
 
     // MARK: - Shared Sections
 
+    // MARK: - Dynamic Author Profile
+
+    static func authorProfile(name: String, useCase: String) -> String {
+        """
+        ## Author Profile
+
+        **Name:** \(name)
+        **Writing context:** \(useCase.isEmpty ? "Not specified — ask the author to describe their writing context." : useCase)
+
+        Read this section before every command. It is the strategic foundation for all work in this workspace:
+        - When running `createvoicedna` — use this context to prioritize the most relevant reference material and frame the voice analysis around this writer's actual audience and goals
+        - When running `createcontentstrategy` — treat this as the positioning brief; do not ask for context that is already described here
+        - When brainstorming — weight ideas toward this audience, platform, and goal
+        - When drafting or editing — write for the person and purpose described here
+        """
+    }
+
     private static let header = ###"""
     # Amplify
 
@@ -46,9 +63,14 @@ enum CLAUDETemplate {
     private static let voiceDNA = ###"""
     ## Voice DNA
 
-    **Before generating any content**, read `.writinghub/voice-dna.md` if it exists.
+    **Before generating any content**, read `voice-dna.md` (workspace root) if it exists.
 
     The voice DNA file captures the author's unique style: sentence rhythm, vocabulary preferences, tone, recurring phrases, and things to avoid. Every draft, brainstorm, and edit must respect this profile.
+
+    **Format rules for voice-dna.md:**
+    - Capped at 150 lines max — be ruthlessly concise
+    - No blank lines between list items
+    - Do not repeat patterns already covered by the Humanizer Anti-Patterns section — cross-reference it, don't duplicate it
 
     If the file does not exist, prompt the author to run `createvoicedna` first.
     """###
@@ -116,14 +138,20 @@ enum CLAUDETemplate {
     private static let cmdCreateVoiceDNA = ###"""
     ### createvoicedna
 
-    **Purpose:** Generate a concise voice profile from the author's reference material.
+    **Purpose:** Generate a concise voice profile from the author's reference material, grounded in their writing context.
 
     **Behavior:**
-    1. Read every file in `references/`.
-    2. Ask the author for URLs of published writing — fetch and analyze those too.
-    3. Ask the author: What platforms do you write for? Which writers influence your style? What words or patterns do you want to avoid?
-    4. Analyze all material for: core tone traits, vocabulary preferences, structural habits, platform-specific patterns.
-    5. Generate `.writinghub/voice-dna.md` — **capped at 150 lines max** — with sections: Identity, Core voice, Hard rules, Platform voice, Vocabulary, Sample patterns, Anti-patterns.
+    1. Read the **Author Profile** section at the top of this file. Use it as the strategic lens for all analysis — do not ask for context already described there.
+    2. Read every file in `references/`.
+    3. Ask the author for URLs of published writing — fetch and analyze those too.
+    4. Ask only for what is missing from the Author Profile: Which writers influence your style? What words or patterns do you want to avoid? Any platform-specific habits?
+    5. Analyze all material for: core tone traits, vocabulary preferences, structural habits, platform-specific patterns.
+    6. Generate `voice-dna.md` in the workspace root — **capped at 150 lines max** — with sections: Identity, Core voice, Hard rules, Platform voice, Vocabulary, Sample patterns, Anti-patterns.
+
+    **Output format rules:**
+    - No blank lines between list items within any section
+    - Do not list patterns already covered by the Humanizer Anti-Patterns section in CLAUDE.md — write "See humanizer list" and move on
+    - The Identity section must anchor to the Author Profile context — who this person is and what they are building
     """###
 
     private static let cmdBrainstorm = ###"""
@@ -132,7 +160,7 @@ enum CLAUDETemplate {
     **Purpose:** Generate 10 content angles or hooks for a given topic.
 
     **Behavior:**
-    1. Read `.writinghub/voice-dna.md` for voice context.
+    1. Read `voice-dna.md` for voice context.
     2. Generate 10 distinct angles — each with a working title and 1-2 sentence hook.
     3. Save output to `ideas/[slugified-topic].md` with proper frontmatter.
     """###
@@ -144,7 +172,7 @@ enum CLAUDETemplate {
     If no `[file]` argument given, read `.writinghub/context.md` for the currently open file.
 
     **Behavior:**
-    1. Read `.writinghub/voice-dna.md`.
+    1. Read `voice-dna.md`.
     2. Read the specified file.
     3. Write a complete first draft in the author's voice.
     4. Save to `drafts/[filename].md` with proper frontmatter.
@@ -157,7 +185,7 @@ enum CLAUDETemplate {
     If no `[file]` argument given, read `.writinghub/context.md` for the currently open file.
 
     **Behavior:**
-    1. Read `.writinghub/voice-dna.md`.
+    1. Read `voice-dna.md`.
     2. Read the specified file.
     3. Edit for clarity, conciseness, voice consistency, and the humanizer checklist.
     4. Show a diff of changes (before/after for each significant edit).
@@ -184,7 +212,7 @@ enum CLAUDETemplate {
     If no `[file]` argument given, read `.writinghub/context.md` for the currently open file.
 
     **Behavior:**
-    1. Read `.writinghub/voice-dna.md`.
+    1. Read `voice-dna.md`.
     2. Read the specified file.
     3. Check the `platforms` field in frontmatter. If empty, ask the author which platforms to target.
     4. For each platform, generate an adapted version:
@@ -200,16 +228,22 @@ enum CLAUDETemplate {
     **Purpose:** Generate a structured content strategy doc from author input.
 
     **Behavior:**
-    1. Read `.writinghub/voice-dna.md` for context (if it exists).
+    1. Read `voice-dna.md` for context (if it exists).
     2. Ask the author: positioning, content lanes, platforms + cadence, target audiences, strategic goal, metrics.
     3. Generate `content_strategy.md` in the workspace root with sections: Positioning, Content lanes, Platform strategy, Target audiences, Content sourcing, Publishing cadence, Success signals.
     """###
 
-    // MARK: - Founder Template
+    // MARK: - Generate
 
-    static let founder: String = {
+    /// Generates a personalized CLAUDE.md for the given author and use case.
+    /// The author profile is injected first so Claude reads it before anything else.
+    static func generate(name: String, useCase: String) -> String {
+        let profile = authorProfile(name: name, useCase: useCase)
+
         let folderStructure = ###"""
         ## Folder Structure
+
+        This workspace is for **content creation** (drafting, publishing, audience building). If you maintain other workspaces (e.g. a founder second brain at `../founder-space`), reference them by relative path — do not mix their files into this structure.
 
         ```
         workspace/
@@ -217,7 +251,8 @@ enum CLAUDETemplate {
           drafts/         # Work-in-progress pieces being shaped
           published/      # Live pieces with publish date recorded
           references/     # Voice samples, style guides, swipe files
-          .writinghub/    # Internal config (voice-dna.md, settings)
+          voice-dna.md    # Your voice profile (generated by createvoicedna)
+          .writinghub/    # Internal config (context.md, config.json)
           CLAUDE.md       # This file — your operating instructions
         ```
         """###
@@ -230,6 +265,7 @@ enum CLAUDETemplate {
 
         return [
             header, "", "---", "",
+            profile, "", "---", "",
             folderStructure, "", "---", "",
             fileFormat, "", "---", "",
             voiceDNA, "", "---", "",
@@ -245,83 +281,6 @@ enum CLAUDETemplate {
             cmdReplicate, "", "---", "",
             generalRules,
         ].joined(separator: "\n")
-    }()
-
-    // MARK: - Hobby Writer Template
-
-    static let hobbyWriter: String = {
-        let folderStructure = ###"""
-        ## Folder Structure
-
-        ```
-        workspace/
-          drafts/         # Work-in-progress pieces
-          published/      # Finished pieces
-          references/     # Voice samples, inspiration, style guides
-          .writinghub/    # Internal config (voice-dna.md, settings)
-          CLAUDE.md       # This file — your operating instructions
-        ```
-        """###
-
-        let commands = ###"""
-        ## Commands
-
-        These are tasks the author can ask you to do.
-        """###
-
-        return [
-            header, "", "---", "",
-            folderStructure, "", "---", "",
-            fileFormat, "", "---", "",
-            voiceDNA, "", "---", "",
-            humanizer, "", "---", "",
-            activeFileContext, "", "---", "",
-            commands, "",
-            cmdCreateVoiceDNA, "", "---", "",
-            cmdDraft, "", "---", "",
-            cmdEdit, "", "---", "",
-            cmdCritique, "", "---", "",
-            generalRules,
-        ].joined(separator: "\n")
-    }()
-
-    // MARK: - Marketing Manager Template
-
-    static let marketingManager: String = {
-        let folderStructure = ###"""
-        ## Folder Structure
-
-        ```
-        workspace/
-          strategy/       # Strategy docs, positioning, market analysis
-          campaigns/      # Campaign plans, briefs, timelines
-          content/        # Content pieces across platforms
-          references/     # Brand guides, competitor examples, research
-          .writinghub/    # Internal config (voice-dna.md, settings)
-          CLAUDE.md       # This file — your operating instructions
-        ```
-        """###
-
-        let commands = ###"""
-        ## Commands
-
-        These are tasks the author can ask you to do.
-        """###
-
-        return [
-            header, "", "---", "",
-            folderStructure, "", "---", "",
-            fileFormat, "", "---", "",
-            voiceDNA, "", "---", "",
-            humanizer, "", "---", "",
-            activeFileContext, "", "---", "",
-            commands, "",
-            cmdCreateContentStrategy, "", "---", "",
-            cmdBrainstorm, "", "---", "",
-            cmdDraft, "", "---", "",
-            cmdReplicate, "", "---", "",
-            generalRules,
-        ].joined(separator: "\n")
-    }()
+    }
 }
 // swiftlint:enable line_length type_body_length
