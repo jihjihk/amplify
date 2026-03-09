@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  APP_NAME: Amplify
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    env:
+      TAG_NAME: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build arm64
+        working-directory: WritingHub
+        run: swift build -c release --arch arm64
+
+      - name: Build x86_64
+        working-directory: WritingHub
+        run: swift build -c release --arch x86_64
+
+      - name: Create universal binary with lipo
+        working-directory: WritingHub
+        run: |
+          lipo -create \
+            .build/arm64-apple-macosx/release/WritingHub \
+            .build/x86_64-apple-macosx/release/WritingHub \
+            -output WritingHub-universal
+
+      - name: Create .app bundle
+        run: |
+          mkdir -p "${APP_NAME}.app/Contents/MacOS"
+          mkdir -p "${APP_NAME}.app/Contents/Resources"
+
+          cp WritingHub/WritingHub-universal "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+          chmod +x "${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+
+          # Copy resource bundles
+          cp -r WritingHub/.build/arm64-apple-macosx/release/*.bundle \
+            "${APP_NAME}.app/Contents/Resources/" 2>/dev/null || true
+
+          cat > "${APP_NAME}.app/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Amplify</string>
+            <key>CFBundleDisplayName</key>
+            <string>Amplify</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.amplify.app</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundleExecutable</key>
+            <string>Amplify</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>14.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSSupportsAutomaticTermination</key>
+            <false/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Codesign
+        if: env.APPLE_CERTIFICATE_BASE64 != ''
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          echo "${APPLE_CERTIFICATE_BASE64}" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "${APPLE_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          /usr/bin/codesign --force --deep --options runtime \
+            --sign "${APPLE_SIGNING_IDENTITY}" "${APP_NAME}.app"
+
+      - name: Notarize
+        if: env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent "${APP_NAME}.app" "${APP_NAME}-notarize.zip"
+          xcrun notarytool submit "${APP_NAME}-notarize.zip" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_PASSWORD}" \
+            --wait
+          xcrun stapler staple "${APP_NAME}.app"
+
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "${APP_NAME}" \
+            -srcfolder "${APP_NAME}.app" \
+            -ov -format UDZO \
+            "${APP_NAME}.dmg"
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${TAG_NAME}" \
+            "${APP_NAME}.dmg" \
+            --title "${APP_NAME} ${TAG_NAME}" \
+            --generate-notes
