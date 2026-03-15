@@ -197,7 +197,7 @@ public struct WelcomeView: View {
                     .font(AmplifyFonts.largeTitle)
                     .foregroundStyle(AmplifyColors.inkPrimary)
 
-                Text("The writing app for AI native writers")
+                Text("Write with agents. Sound like yourself.")
                     .font(AmplifyFonts.title3)
                     .foregroundStyle(AmplifyColors.inkSecondary)
                     .multilineTextAlignment(.center)

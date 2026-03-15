@@ -1,21 +1,25 @@
 # Amplify
 
-**The writing app for AI native writers.**
+**Write with agents. Sound like yourself.**
 
-Amplify is a free, open-source macOS writing app built around Claude Code. File tree, rich Markdown editor, and an embedded Claude Code terminal — all in one window. Open a folder, run `create voice dna`, and start writing.
+A writing IDE for developers who write with AI agents. Amplify gives your agent project-level context — a CLAUDE.md with your voice rules, a voice profile built from your past writing, and clean workspace isolation — so every draft sounds like you, not like AI.
 
 [Download for Mac](https://github.com/jihjihk/amplify/releases/latest) · [Landing page](https://jihjihk.github.io/amplify)
 
+![Amplify demo](landing/demo.gif)
+
 ---
 
-## What it does
+## Why Amplify
 
-- **IDE for writers** — File tree, WYSIWYG Markdown editor, and Claude Code terminal side by side. No switching apps.
-- **Voice DNA** — One command builds a voice profile from your past writing. Every draft, edit, and brainstorm runs through it.
-- **Bring your own subscription** — Uses Claude Code, which you already have. No separate API key, no extra billing.
-- **100% local** — Every file is plain Markdown on your Mac. Nothing touches a server.
-- **Humanizer checklist** — 24 anti-patterns baked into the CLAUDE.md so AI output doesn't sound like AI.
-- **Auto-save + git** — Edits are debounced, saved, and auto-committed. Your writing history is preserved.
+Note-taking apps send individual files to AI with zero context about your voice, your audience, or your workflow. Amplify gives your agent a full project every time.
+
+- **CLAUDE.md at the root** — Like `.eslintrc` for your writing. Voice rules, anti-patterns, and commands that your agent reads on every interaction.
+- **Voice DNA** — One command analyzes your past writing and builds a voice profile. Every draft, edit, and brainstorm runs through it automatically.
+- **Isolated workspaces** — Each writing project is its own folder with its own context. Your newsletter and your technical blog don't bleed into each other.
+- **Built-in terminal** — Claude Code runs inside the app. Chain commands, iterate on drafts, see exactly what the agent does.
+- **Plain Markdown, plain folders** — No proprietary format, no database, no sync layer. Git-native. Open your files in anything.
+- **Bring your own subscription** — Uses Claude Code. No API key, no extra billing, no account.
 
 ## Getting started
 

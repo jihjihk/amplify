@@ -40,3 +40,4 @@ CLAUDE.md
 .env
 *.pem
 *.p12
+docs/
