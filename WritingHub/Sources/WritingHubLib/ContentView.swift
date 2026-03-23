@@ -4,6 +4,7 @@ import SwiftUI
 
 public struct ContentView: View {
     @StateObject private var viewModel = HubViewModel()
+    @StateObject private var updateService = AppUpdateService.shared
     @State private var showSidebar: Bool = true
     @State private var showTerminal: Bool = true
     @State private var showSearch: Bool = false
@@ -29,6 +30,7 @@ public struct ContentView: View {
             BrandingHeader(
                 config: viewModel.config,
                 showTerminal: $showTerminal,
+                onCheckForUpdates: { updateService.checkForUpdates() }
             )
 
             HSplitView {
@@ -115,6 +117,9 @@ public struct ContentView: View {
         } message: {
             Text(workspaceError ?? "")
         }
+        .sheet(isPresented: $updateService.isPresentingSheet) {
+            UpdateSheet(service: updateService)
+        }
     }
 
     private func openFolder(_ url: URL, skill: SkillPack, name: String) {
@@ -143,6 +148,7 @@ public struct ContentView: View {
 struct BrandingHeader: View {
     let config: HubConfig
     @Binding var showTerminal: Bool
+    let onCheckForUpdates: () -> Void
 
     var body: some View {
         HStack {
@@ -156,6 +162,16 @@ struct BrandingHeader: View {
             Spacer()
 
             HStack(spacing: 6) {
+                Button {
+                    onCheckForUpdates()
+                } label: {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Check for Updates")
+
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { showTerminal.toggle() }
                 } label: {
@@ -171,6 +187,109 @@ struct BrandingHeader: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 7)
         .background(AmplifyColors.barBg)
+    }
+}
+
+struct UpdateSheet: View {
+    @ObservedObject var service: AppUpdateService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Amplify Updates")
+                        .font(AmplifyFonts.title2)
+                        .foregroundStyle(AmplifyColors.inkPrimary)
+                    Text("Current version: \(service.currentVersion)")
+                        .font(.callout)
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                }
+                Spacer()
+            }
+
+            Group {
+                switch service.state {
+                case .idle, .checking:
+                    ProgressView("Checking GitHub releases…")
+                        .font(.callout)
+                case .upToDate(let message):
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                case .failure(let message):
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                case .updateAvailable(let release):
+                    releaseSection(release)
+                case .downloading(let release, let progress):
+                    releaseSection(release)
+                    ProgressView(value: progress ?? 0)
+                    Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing download…")
+                        .font(.caption)
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                case .readyToInstall(let release):
+                    releaseSection(release)
+                    Label("Installing update and relaunching Amplify…", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.callout)
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                }
+            }
+
+            Spacer()
+
+            HStack {
+                Button("Close") {
+                    service.dismissSheet()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                switch service.state {
+                case .updateAvailable:
+                    Button("View Release") {
+                        service.openReleasePage()
+                    }
+                    Button("Download and Install") {
+                        service.downloadAndInstall()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                case .failure:
+                    Button("Open Releases") {
+                        service.openReleasePage()
+                    }
+                default:
+                    EmptyView()
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 560, height: 420)
+        .background(AmplifyColors.parchment)
+    }
+
+    @ViewBuilder
+    private func releaseSection(_ release: AppReleaseInfo) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(release.name ?? "Version \(release.displayVersion)")
+                .font(AmplifyFonts.title3)
+                .foregroundStyle(AmplifyColors.inkPrimary)
+            Text("Latest version: \(release.displayVersion)")
+                .font(.callout)
+                .foregroundStyle(AmplifyColors.inkSecondary)
+            ScrollView {
+                Text(release.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No release notes provided." : release.body)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AmplifyColors.inkSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(AmplifyColors.surface)
+            )
+        }
     }
 }
 

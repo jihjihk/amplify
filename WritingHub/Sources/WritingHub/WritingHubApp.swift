@@ -52,6 +52,12 @@ struct WritingHubApp: App {
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
+
+            CommandMenu("Updates") {
+                Button("Check for Updates…") {
+                    AppUpdateService.shared.checkForUpdates()
+                }
+            }
         }
     }
 }

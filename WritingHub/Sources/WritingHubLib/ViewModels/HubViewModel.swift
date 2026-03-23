@@ -32,6 +32,7 @@ public class HubViewModel: ObservableObject {
 
     private var fileWatcher: FileWatcher?
     private var gitService: GitService?
+    private var markdownSessions: [URL: MarkdownDocumentSession] = [:]
     private var cancellables = Set<AnyCancellable>()
 
     public init() {}
@@ -47,6 +48,7 @@ public class HubViewModel: ObservableObject {
         workspaceFiles.removeAll()
         loadedFileCount = 0
         dirtyTabPaths.removeAll()
+        markdownSessions.removeAll()
         noticeMessage = nil
         workspaceWarning = nil
         self.skillPack = skill
@@ -198,6 +200,35 @@ public class HubViewModel: ObservableObject {
 
         reload()
         return savedText
+    }
+
+    public func markdownSession(for fileURL: URL) -> MarkdownDocumentSession {
+        let key = fileURL.standardizedFileURL
+        if let existing = markdownSessions[key] {
+            return existing
+        }
+
+        let session = MarkdownDocumentSession(fileURL: key, workspaceRoot: folderManager?.root)
+        session.onDirtyStateChanged = { [weak self] isDirty in
+            Task { @MainActor [weak self] in
+                self?.setDirty(key, isDirty: isDirty)
+            }
+        }
+        session.onWillSave = { [weak self] path in
+            self?.fileWatcher?.markSelfWrite(path)
+        }
+        session.onDidSave = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.reload()
+            }
+        }
+        session.onNotice = { [weak self] message in
+            Task { @MainActor [weak self] in
+                self?.noticeMessage = message
+            }
+        }
+        markdownSessions[key] = session
+        return session
     }
 
     // MARK: - File Clipboard

@@ -16,8 +16,13 @@ jobs:
     runs-on: macos-15
     env:
       TAG_NAME: ${{ github.ref_name }}
+      APP_VERSION: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Derive release version
+        run: |
+          echo "APP_VERSION=${TAG_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Build arm64
         working-directory: WritingHub
@@ -47,7 +52,7 @@ jobs:
           cp -r WritingHub/.build/arm64-apple-macosx/release/*.bundle \
             "${APP_NAME}.app/Contents/Resources/" 2>/dev/null || true
 
-          cat > "${APP_NAME}.app/Contents/Info.plist" << 'PLIST'
+          cat > "${APP_NAME}.app/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -59,9 +64,9 @@ jobs:
             <key>CFBundleIdentifier</key>
             <string>com.amplify.app</string>
             <key>CFBundleVersion</key>
-            <string>1</string>
+            <string>${APP_VERSION}</string>
             <key>CFBundleShortVersionString</key>
-            <string>1.0.0</string>
+            <string>${APP_VERSION}</string>
             <key>CFBundleExecutable</key>
             <string>Amplify</string>
             <key>CFBundlePackageType</key>
@@ -115,11 +120,16 @@ jobs:
             -ov -format UDZO \
             "${APP_NAME}.dmg"
 
+      - name: Create ZIP
+        run: |
+          ditto -c -k --keepParent "${APP_NAME}.app" "${APP_NAME}.zip"
+
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${TAG_NAME}" \
+            "${APP_NAME}.zip" \
             "${APP_NAME}.dmg" \
             --title "${APP_NAME} ${TAG_NAME}" \
             --generate-notes

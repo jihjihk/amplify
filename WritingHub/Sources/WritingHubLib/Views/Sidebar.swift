@@ -288,6 +288,13 @@ public struct WorkspaceItemRow: View {
 
     @ViewBuilder
     private var fileContextMenu: some View {
+        Button("Pop Out Preview") {
+            let session = item.path.pathExtension.lowercased() == "md"
+                ? viewModel.markdownSession(for: item.path)
+                : nil
+            FilePreviewWindowManager.present(fileURL: item.path, session: session)
+        }
+        Divider()
         Button("Rename") {
             renameText = item.name
             isRenaming = true

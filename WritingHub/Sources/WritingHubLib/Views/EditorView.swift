@@ -7,7 +7,7 @@ private struct EditorSaveRequest: Sendable {
     let baseText: String
 }
 
-/// A markdown editor that preserves the exact file formatting on disk.
+/// Main editor panel for the selected file.
 public struct EditorView: View {
     @ObservedObject var viewModel: HubViewModel
 
@@ -25,49 +25,42 @@ public struct EditorView: View {
 
     public var body: some View {
         ZStack(alignment: .topLeading) {
-            VStack(spacing: 0) {
-                if let piece = viewModel.selectedFile {
-                    titleBar(for: piece)
-                    Divider().overlay(AmplifyColors.barBg.opacity(0.5))
-                }
+            if let piece = viewModel.selectedFile,
+               let fileURL = piece.filePath,
+               fileURL.pathExtension.lowercased() == "md" {
+                MarkdownDocumentEditorPane(session: viewModel.markdownSession(for: fileURL))
+                    .id(fileURL.standardizedFileURL.path)
+            } else {
+                VStack(spacing: 0) {
+                    if let piece = viewModel.selectedFile {
+                        titleBar(for: piece)
+                        Divider().overlay(AmplifyColors.barBg.opacity(0.5))
+                    }
 
-                if let editorNotice, loadedFileURL != nil {
-                    noticeBar(editorNotice)
-                }
+                    if let editorNotice, loadedFileURL != nil {
+                        noticeBar(editorNotice)
+                    }
 
-                if viewModel.selectedFile != nil {
-                    TextEditor(text: $draftText)
-                        .font(.system(size: 15, weight: .regular, design: .monospaced))
-                        .foregroundStyle(AmplifyColors.inkPrimary)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .background(AmplifyColors.surface)
-                        .onChange(of: draftText) { _, newValue in
-                            handleDraftChange(newValue)
-                        }
+                    if viewModel.selectedFile != nil {
+                        sourceEditor
+                    } else {
+                        placeholderView()
+                    }
                 }
-            }
-            .background(AmplifyColors.surface)
-
-            if viewModel.selectedFile == nil {
-                placeholderView()
-                    .background(AmplifyColors.surface)
+                .background(AmplifyColors.surface)
             }
         }
         .onAppear {
             setupDebouncedSave()
             syncSelectedFileFromDisk(forceReload: true)
         }
-        .onChange(of: viewModel.selectedFile?.filePath) {
+        .onChange(of: viewModel.selectedFile?.filePath) { _, _ in
             syncSelectedFileFromDisk(forceReload: true)
         }
         .onChange(of: viewModel.reloadRevision) { _, _ in
             syncSelectedFileFromDisk(forceReload: false)
         }
     }
-
-    // MARK: - Title Bar
 
     @ViewBuilder
     private func titleBar(for piece: WritingPiece) -> some View {
@@ -125,8 +118,6 @@ public struct EditorView: View {
         .background(AmplifyColors.barBg)
     }
 
-    // MARK: - Placeholder
-
     @ViewBuilder
     private func placeholderView() -> some View {
         ScrollView {
@@ -157,7 +148,18 @@ public struct EditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: - Draft Sync
+    private var sourceEditor: some View {
+        TextEditor(text: $draftText)
+            .font(.system(size: 15, weight: .regular, design: .monospaced))
+            .foregroundStyle(AmplifyColors.inkPrimary)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(AmplifyColors.surface)
+            .onChange(of: draftText) { _, newValue in
+                handleDraftChange(newValue)
+            }
+    }
 
     private func setupDebouncedSave() {
         saveCancellable?.cancel()
@@ -195,7 +197,8 @@ public struct EditorView: View {
     }
 
     private func syncSelectedFileFromDisk(forceReload: Bool) {
-        guard let fileURL = viewModel.selectedFile?.filePath else {
+        guard let fileURL = viewModel.selectedFile?.filePath,
+              fileURL.pathExtension.lowercased() != "md" else {
             loadedFileURL = nil
             loadedDiskText = ""
             draftText = ""
@@ -225,8 +228,7 @@ public struct EditorView: View {
 
     private func reloadSelectedFileFromDisk() {
         guard let fileURL = loadedFileURL,
-              let diskText = try? String(contentsOf: fileURL, encoding: .utf8)
-        else { return }
+              let diskText = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
 
         editorNotice = nil
         replaceDraftText(diskText, fileURL: fileURL, diskText: diskText)
@@ -243,8 +245,6 @@ public struct EditorView: View {
         }
     }
 }
-
-// MARK: - StarterCommandRow
 
 struct StarterCommandRow: View {
     let item: StarterCommand
@@ -269,5 +269,54 @@ struct StarterCommandRow: View {
 
             Spacer()
         }
+    }
+}
+
+struct FindBar: View {
+    @Binding var query: String
+    @FocusState.Binding var isFocused: Bool
+    let onNext: () -> Void
+    let onPrev: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("Find", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .focused($isFocused)
+                .frame(width: 180)
+                .onSubmit { onNext() }
+                .onChange(of: query) { _, _ in onNext() }
+
+            Button(action: onPrev) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Previous match")
+
+            Button(action: onNext) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Next match")
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+        }
+        .foregroundStyle(AmplifyColors.inkSecondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(AmplifyColors.barBg)
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        )
     }
 }
