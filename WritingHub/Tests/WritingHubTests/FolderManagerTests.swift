@@ -39,18 +39,18 @@ final class FolderManagerTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("references").path))
     }
 
-    func testScaffoldMarketingFolders() throws {
+    func testScaffoldBlankNoFolders() throws {
         let tempDir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
-        try manager.scaffold(skill: .marketingManager)
+        try manager.scaffold(skill: .blank)
 
         let fm = FileManager.default
-        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("strategy").path))
-        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("campaigns").path))
-        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("content").path))
-        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("references").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent(".writinghub").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("CLAUDE.md").path))
+        XCTAssertFalse(fm.fileExists(atPath: tempDir.appendingPathComponent("ideas").path))
+        XCTAssertFalse(fm.fileExists(atPath: tempDir.appendingPathComponent("drafts").path))
     }
 
     func testLoadWorkspaceFiles() throws {
@@ -58,7 +58,7 @@ final class FolderManagerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
-        try manager.scaffold(skill: .hobbyWriter)
+        try manager.scaffold(skill: .founder)
 
         let filePath = tempDir.appendingPathComponent("drafts/test.md")
         try "# Test".write(to: filePath, atomically: true, encoding: .utf8)
