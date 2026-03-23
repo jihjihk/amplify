@@ -1,13 +1,8 @@
-import Testing
+import XCTest
 @testable import WritingHubLib
 
-@Suite("FrontMatter Tests")
-struct FrontMatterTests {
-
-    // MARK: - Test 1: Parse full frontmatter
-
-    @Test("Parse frontmatter with all fields")
-    func parseFrontMatter() throws {
+final class FrontMatterTests: XCTestCase {
+    func testParseFrontMatter() throws {
         let content = """
         ---
         title: Why AI Will Eat Finance
@@ -24,18 +19,15 @@ struct FrontMatterTests {
 
         let piece = try WritingPiece.parse(from: content)
 
-        #expect(piece.frontMatter.title == "Why AI Will Eat Finance")
-        #expect(piece.frontMatter.created == "2026-02-27")
-        #expect(piece.frontMatter.edited == "2026-02-27")
-        #expect(piece.frontMatter.version == 3)
-        #expect(piece.frontMatter.platforms == ["substack", "x", "linkedin"])
-        #expect(piece.body.contains("The main content here."))
+        XCTAssertEqual(piece.frontMatter.title, "Why AI Will Eat Finance")
+        XCTAssertEqual(piece.frontMatter.created, "2026-02-27")
+        XCTAssertEqual(piece.frontMatter.edited, "2026-02-27")
+        XCTAssertEqual(piece.frontMatter.version, 3)
+        XCTAssertEqual(piece.frontMatter.platforms, ["substack", "x", "linkedin"])
+        XCTAssertTrue(piece.body.contains("The main content here."))
     }
 
-    // MARK: - Test 2: Serialize and round-trip
-
-    @Test("Serialize frontmatter and round-trip")
-    func serializeFrontMatter() throws {
+    func testSerializeFrontMatterRoundTrip() throws {
         let content = """
         ---
         title: Test Post
@@ -51,19 +43,16 @@ struct FrontMatterTests {
         let piece = try WritingPiece.parse(from: content)
         let serialized = piece.serialize()
 
-        #expect(serialized.hasPrefix("---\n"))
-        #expect(serialized.contains("title: Test Post"))
-        #expect(serialized.contains("Some body text."))
+        XCTAssertTrue(serialized.hasPrefix("---\n"))
+        XCTAssertTrue(serialized.contains("title: Test Post"))
+        XCTAssertTrue(serialized.contains("Some body text."))
 
         let reparsed = try WritingPiece.parse(from: serialized)
-        #expect(reparsed.frontMatter.title == "Test Post")
-        #expect(reparsed.frontMatter.version == 1)
+        XCTAssertEqual(reparsed.frontMatter.title, "Test Post")
+        XCTAssertEqual(reparsed.frontMatter.version, 1)
     }
 
-    // MARK: - Test 3: Parse markdown without frontmatter
-
-    @Test("Parse markdown without frontmatter")
-    func parseMarkdownWithoutFrontMatter() throws {
+    func testParseMarkdownWithoutFrontMatter() throws {
         let content = """
         # Just a plain markdown file
 
@@ -72,16 +61,13 @@ struct FrontMatterTests {
 
         let piece = try WritingPiece.parse(from: content)
 
-        #expect(piece.frontMatter.title == nil)
-        #expect(piece.frontMatter.version == nil)
-        #expect(piece.body.contains("Just a plain markdown file"))
-        #expect(piece.body.contains("No frontmatter here"))
+        XCTAssertNil(piece.frontMatter.title)
+        XCTAssertNil(piece.frontMatter.version)
+        XCTAssertTrue(piece.body.contains("Just a plain markdown file"))
+        XCTAssertTrue(piece.body.contains("No frontmatter here"))
     }
 
-    // MARK: - Test 4: Parse platform sections
-
-    @Test("Parse platform sections")
-    func parsePlatformSections() throws {
+    func testParsePlatformSections() throws {
         let content = """
         ---
         title: Why AI Will Eat Finance
@@ -110,10 +96,10 @@ struct FrontMatterTests {
 
         let piece = try WritingPiece.parse(from: content)
 
-        #expect(piece.platformSections.count == 2)
-        #expect(piece.platformSections["X Thread"]?.contains("1/ First tweet.") == true)
-        #expect(piece.platformSections["LinkedIn"]?.contains("Professional version here.") == true)
-        #expect(!piece.body.contains("1/ First tweet."))
-        #expect(!piece.body.contains("Professional version here."))
+        XCTAssertEqual(piece.platformSections.count, 2)
+        XCTAssertTrue(piece.platformSections["X Thread"]?.contains("1/ First tweet.") == true)
+        XCTAssertTrue(piece.platformSections["LinkedIn"]?.contains("Professional version here.") == true)
+        XCTAssertFalse(piece.body.contains("1/ First tweet."))
+        XCTAssertFalse(piece.body.contains("Professional version here."))
     }
 }

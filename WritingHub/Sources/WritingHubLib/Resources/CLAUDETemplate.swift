@@ -282,5 +282,113 @@ enum CLAUDETemplate {
             generalRules,
         ].joined(separator: "\n")
     }
+    // MARK: - gstack
+
+    /// CLAUDE.md for gstack workflows. Includes installation guide and full command reference.
+    /// Amplify auto-runs `claude install-skill garrytan/gstack` during scaffolding,
+    /// but this guide is here in case the install needs to be re-run.
+    static func generateGstack(name: String) -> String {
+        ###"""
+        # Amplify + gstack
+
+        You are operating inside an Amplify workspace enhanced with [gstack](https://github.com/garrytan/gstack) — Garry Tan's Claude Code workflow that turns a single AI assistant into a structured development team.
+
+        **Author:** \###(name)
+
+        ---
+
+        ## Installation
+
+        gstack should already be installed. If commands like `/ship` or `/review` are not recognized, re-install:
+
+        ```bash
+        # Install gstack globally (recommended)
+        claude install-skill garrytan/gstack
+
+        # Or install locally for this project only
+        claude install-skill --local garrytan/gstack
+        ```
+
+        **Requirements:** Claude Code, Git, Bun v1.0+
+
+        ---
+
+        ## Workflow: Think → Plan → Build → Review → Test → Ship → Reflect
+
+        gstack skills are designed to run in sprint order. Each feeds into the next.
+
+        ### Think
+        - `/office-hours` — YC-style brainstorming. Startup mode: six forcing questions. Builder mode: design thinking for side projects.
+
+        ### Plan
+        - `/plan-ceo-review` — CEO/founder-mode review. Rethink the problem, find the 10-star product, challenge premises.
+        - `/plan-eng-review` — Eng manager review. Lock in architecture, data flow, edge cases, test coverage.
+        - `/plan-design-review` — Designer's eye review. Rate each design dimension 0-10, explain what makes it a 10, fix the plan.
+        - `/autoplan` — Run all three reviews automatically with smart decision-making.
+
+        ### Build
+        - `/design-consultation` — Create a full design system (aesthetic, typography, color, layout, spacing, motion). Generates DESIGN.md.
+        - `/investigate` — Systematic debugging with root cause investigation. Four phases: investigate, analyze, hypothesize, implement.
+        - `/freeze` — Restrict file edits to a specific directory. Prevents accidentally touching unrelated code.
+        - `/unfreeze` — Remove freeze boundary.
+
+        ### Review
+        - `/review` — Pre-landing PR review. Analyzes diff for SQL safety, LLM trust boundary violations, conditional side effects.
+        - `/codex` — Second opinion from OpenAI Codex. Three modes: code review, adversarial challenge, consult.
+
+        ### Test
+        - `/qa` — Systematically test a web app and fix bugs found. Three tiers: Quick, Standard, Exhaustive.
+        - `/qa-only` — Report-only QA (no fixes).
+        - `/benchmark` — Performance regression detection. Page load times, Core Web Vitals, resource sizes.
+        - `/design-review` — Visual QA. Finds spacing issues, hierarchy problems, AI slop patterns.
+
+        ### Ship
+        - `/ship` — Merge base branch, run tests, review diff, bump VERSION, update CHANGELOG, create PR.
+        - `/land-and-deploy` — Merge PR, wait for CI, verify production health via canary checks.
+        - `/canary` — Post-deploy monitoring. Watches for console errors, performance regressions, page failures.
+        - `/setup-deploy` — Configure deployment settings (Fly.io, Render, Vercel, Netlify, Heroku, GitHub Actions).
+
+        ### Reflect
+        - `/retro` — Weekly engineering retrospective. Analyzes commit history, work patterns, code quality metrics.
+        - `/document-release` — Post-ship documentation update. Syncs README/ARCHITECTURE/CONTRIBUTING/CHANGELOG.
+
+        ### Safety
+        - `/careful` — Warns before destructive commands (rm -rf, DROP TABLE, force-push).
+        - `/guard` — Full safety mode: destructive warnings + directory-scoped edits.
+        - `/cso` — Security audit. Secrets archaeology, dependency supply chain, CI/CD pipeline, OWASP Top 10, STRIDE threat modeling.
+
+        ---
+
+        ## Active File Context
+
+        The Amplify app writes `.writinghub/context.md` whenever the user selects a file.
+        Before running any command that accepts a `[file]` argument, check `.writinghub/context.md`.
+        """###
+    }
+
+    // MARK: - Blank
+
+    /// Minimal CLAUDE.md for blank workspaces — just the author name and basic rules.
+    static func generateBlank(name: String) -> String {
+        """
+        # Amplify
+
+        You are a writing assistant operating inside an Amplify workspace.
+
+        **Author:** \(name)
+
+        ## Active File Context
+
+        The Amplify app writes `.writinghub/context.md` whenever the user selects a file.
+        Before running any command that accepts a `[file]` argument, check `.writinghub/context.md`.
+        If no file argument is provided, read the active file from that context file and use it.
+
+        ## General Rules
+
+        - Never overwrite a file without confirmation if it already has content.
+        - Keep file names as URL-safe slugs: lowercase, hyphens, no spaces.
+        - When in doubt, ask the author. Do not assume intent.
+        """
+    }
 }
 // swiftlint:enable line_length type_body_length

@@ -1,5 +1,4 @@
 import SwiftUI
-import MarkupEditor
 
 // MARK: - ContentView
 
@@ -7,75 +6,114 @@ public struct ContentView: View {
     @StateObject private var viewModel = HubViewModel()
     @State private var showSidebar: Bool = true
     @State private var showTerminal: Bool = true
+    @State private var showSearch: Bool = false
+    @State private var searchQuery: String = ""
+    @State private var workspaceError: String?
 
     public init() {}
 
-    public var body: some View {
-        Group {
-            if viewModel.isHubOpen {
-                VStack(spacing: 0) {
-                    BrandingHeader(config: viewModel.config, showSidebar: $showSidebar, showTerminal: $showTerminal)
-
-                    HSplitView {
-                        if showSidebar {
-                            Sidebar(viewModel: viewModel)
-                                .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
-                        }
-
-                        VStack(spacing: 0) {
-                            if !viewModel.openTabs.isEmpty {
-                                TabBar(viewModel: viewModel)
-                            }
-                            EditorView(viewModel: viewModel)
-                        }
-                        .frame(minWidth: 400)
-
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("Claude Code")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(AmplifyColors.inkTertiary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(AmplifyColors.barBg)
-
-                            if let root = viewModel.folderManager?.root {
-                                TerminalPanelView(folderPath: root)
-                            }
-                        }
-                        .frame(minWidth: showTerminal ? 300 : 0,
-                               idealWidth: 380,
-                               maxWidth: showTerminal ? 500 : 0)
-                        .opacity(showTerminal ? 1 : 0)
-                        .clipped()
-                    }
-                    StatusBar(viewModel: viewModel)
-                }
-            } else {
-                WelcomeView(onOpenFolder: openFolder)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(AmplifyColors.parchment)
-            }
+    @ViewBuilder
+    private var mainContent: some View {
+        if viewModel.isHubOpen {
+            hubView
+        } else {
+            WelcomeView(onOpenFolder: openFolder)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AmplifyColors.parchment)
         }
+    }
+
+    @ViewBuilder
+    private var hubView: some View {
+        VStack(spacing: 0) {
+            BrandingHeader(
+                config: viewModel.config,
+                showTerminal: $showTerminal,
+            )
+
+            HSplitView {
+                VStack(spacing: 0) {
+                    SidebarTopBar(
+                        showSidebar: $showSidebar,
+                        searchQuery: $searchQuery,
+                        onShowSearch: openSearch
+                    )
+
+                    if showSidebar {
+                        Sidebar(viewModel: viewModel)
+                    }
+                }
+                .frame(minWidth: showSidebar ? 180 : 46,
+                       idealWidth: showSidebar ? 220 : 46,
+                       maxWidth: showSidebar ? 300 : 46)
+
+                VStack(spacing: 0) {
+                    if !viewModel.openTabs.isEmpty {
+                        TabBar(viewModel: viewModel)
+                    }
+                    EditorView(viewModel: viewModel)
+                }
+                .frame(minWidth: 400)
+
+                VStack(spacing: 0) {
+                    if let root = viewModel.folderManager?.root {
+                        TerminalTabsView(folderPath: root)
+                    }
+                }
+                .frame(minWidth: showTerminal ? 280 : 0,
+                       idealWidth: 380,
+                       maxWidth: showTerminal ? .infinity : 0)
+                .opacity(showTerminal ? 1 : 0)
+                .clipped()
+            }
+            StatusBar(viewModel: viewModel)
+        }
+    }
+
+    public var body: some View {
+        mainContent
         .frame(minWidth: 900, minHeight: 600)
         .background(AmplifyColors.parchment)
+        .overlay {
+            if showSearch {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture { showSearch = false }
+
+                    VStack {
+                        SearchView(
+                            viewModel: viewModel,
+                            isPresented: $showSearch,
+                            query: $searchQuery
+                        )
+                            .padding(.top, 60)
+                        Spacer()
+                    }
+                }
+            }
+        }
         .background(
             Button("") { viewModel.closeActiveTab() }
                 .keyboardShortcut("w", modifiers: .command)
+                .hidden()
+        )
+        .background(
+            Button("") { openSearch() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
                 .hidden()
         )
         .tint(AmplifyColors.accent)
         .navigationTitle(viewModel.isHubOpen
             ? viewModel.folderManager?.root.lastPathComponent ?? "Amplify"
             : "Amplify")
-        // Pre-warm WKWebView — overlay keeps it alive without affecting background rendering
-        .overlay(alignment: .bottomTrailing) {
-            MarkupEditorView(html: .constant(""))
-                .frame(width: 1, height: 1)
-                .opacity(0)
-                .allowsHitTesting(false)
+        .alert("Couldn't Open Workspace", isPresented: Binding(
+            get: { workspaceError != nil },
+            set: { if !$0 { workspaceError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(workspaceError ?? "")
         }
     }
 
@@ -83,11 +121,20 @@ public struct ContentView: View {
         let existing = HubConfig.load(from: url)
         let useCase = existing?.useCase ?? ""
         let resolvedName = existing?.name ?? name
-        try? viewModel.openFolder(url, skill: skill, name: resolvedName, useCase: useCase)
+        do {
+            try viewModel.openFolder(url, skill: skill, name: resolvedName, useCase: useCase)
+        } catch {
+            workspaceError = error.localizedDescription
+            return
+        }
         let config = HubConfig(name: resolvedName, skillPack: skill, useCase: useCase)
         config.save(to: url)
         viewModel.config = config
         viewModel.skillPack = skill
+    }
+
+    private func openSearch() {
+        showSearch = true
     }
 }
 
@@ -95,7 +142,6 @@ public struct ContentView: View {
 
 struct BrandingHeader: View {
     let config: HubConfig
-    @Binding var showSidebar: Bool
     @Binding var showTerminal: Bool
 
     var body: some View {
@@ -110,17 +156,6 @@ struct BrandingHeader: View {
             Spacer()
 
             HStack(spacing: 6) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { showSidebar.toggle() }
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 13))
-                        .foregroundStyle(showSidebar ? AmplifyColors.inkSecondary : AmplifyColors.inkTertiary)
-                }
-                .buttonStyle(.plain)
-                .help("Toggle Sidebar (⌘\\)")
-                .keyboardShortcut("\\", modifiers: .command)
-
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { showTerminal.toggle() }
                 } label: {
@@ -144,7 +179,8 @@ struct BrandingHeader: View {
 enum OnboardingStep {
     case pickFolder
     case enterName(URL)
-    case enterUseCase(URL, String)       // url, name
+    case pickBoilerplate(URL, String)               // url, name
+    case enterUseCase(URL, String, SkillPack)       // url, name, skill
     case scaffolded(URL, SkillPack, String)
 }
 
@@ -157,6 +193,7 @@ public struct WelcomeView: View {
     @State private var userName: String = ""
     @State private var useCase: String = ""
     @State private var placeholderIndex: Int = 0
+    @State private var errorMessage: String?
     @FocusState private var nameFieldFocused: Bool
 
     private static let useCasePlaceholders = [
@@ -174,15 +211,27 @@ public struct WelcomeView: View {
     }
 
     public var body: some View {
-        switch step {
-        case .pickFolder:
-            pickFolderView
-        case .enterName(let url):
-            enterNameView(url: url)
-        case .enterUseCase(let url, let name):
-            enterUseCaseView(url: url, name: name)
-        case .scaffolded(let url, let skill, let name):
-            scaffoldedView(url: url, skill: skill, name: name)
+        Group {
+            switch step {
+            case .pickFolder:
+                pickFolderView
+            case .enterName(let url):
+                enterNameView(url: url)
+            case .pickBoilerplate(let url, let name):
+                pickBoilerplateView(url: url, name: name)
+            case .enterUseCase(let url, let name, let skill):
+                enterUseCaseView(url: url, name: name, skill: skill)
+            case .scaffolded(let url, let skill, let name):
+                scaffoldedView(url: url, skill: skill, name: name)
+            }
+        }
+        .alert("Couldn't Create Workspace", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -233,7 +282,6 @@ public struct WelcomeView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            // Large serif name input — the name appears inline with "amplifying"
             ZStack(alignment: .leading) {
                 (
                     Text("amplifying ")
@@ -245,7 +293,6 @@ public struct WelcomeView: View {
                 )
                 .frame(maxWidth: 520, alignment: .leading)
 
-                // Invisible text field — captures input, updates userName
                 TextField("", text: $userName)
                     .font(AmplifyFonts.instrumentSerifItalic(size: 42))
                     .textFieldStyle(.plain)
@@ -260,7 +307,7 @@ public struct WelcomeView: View {
             Button("Continue") {
                 let name = userName.trimmingCharacters(in: .whitespaces)
                 let finalName = name.isEmpty ? "you" : name
-                step = .enterUseCase(url, finalName)
+                step = .pickBoilerplate(url, finalName)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -270,9 +317,45 @@ public struct WelcomeView: View {
         .padding(40)
     }
 
-    // MARK: - Step 3: Enter Use Case
+    // MARK: - Step 3: Pick Boilerplate
 
-    private func enterUseCaseView(url: URL, name: String) -> some View {
+    private func pickBoilerplateView(url: URL, name: String) -> some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Start with a boilerplate")
+                        .font(AmplifyFonts.instrumentSerif(size: 28))
+                        .foregroundStyle(AmplifyColors.inkPrimary)
+
+                    Text("Pick a starter setup, or start blank.")
+                        .font(.body)
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                }
+
+                VStack(spacing: 10) {
+                    ForEach(SkillPack.allCases) { skill in
+                        BoilerplateCard(skill: skill) {
+                            if skill.asksForUseCase {
+                                step = .enterUseCase(url, name, skill)
+                            } else {
+                                scaffold(url: url, name: name, skill: skill, useCase: "")
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 520)
+
+            Spacer()
+        }
+        .padding(40)
+    }
+
+    // MARK: - Step 4: Enter Use Case (writing boilerplates only)
+
+    private func enterUseCaseView(url: URL, name: String, skill: SkillPack) -> some View {
         VStack(spacing: 0) {
             Spacer()
 
@@ -288,7 +371,6 @@ public struct WelcomeView: View {
                 }
 
                 ZStack(alignment: .topLeading) {
-                    // Placeholder hint — rotates through common use cases
                     if useCase.isEmpty {
                         Text(useCasePlaceholder)
                             .font(.body)
@@ -313,7 +395,7 @@ public struct WelcomeView: View {
 
                 HStack {
                     Button("Skip") {
-                        scaffold(url: url, name: name, useCase: "")
+                        scaffold(url: url, name: name, skill: skill, useCase: "")
                     }
                     .foregroundStyle(AmplifyColors.inkTertiary)
                     .buttonStyle(.plain)
@@ -321,7 +403,7 @@ public struct WelcomeView: View {
                     Spacer()
 
                     Button("Continue") {
-                        scaffold(url: url, name: name, useCase: useCase.trimmingCharacters(in: .whitespacesAndNewlines))
+                        scaffold(url: url, name: name, skill: skill, useCase: useCase.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -335,15 +417,19 @@ public struct WelcomeView: View {
         .padding(40)
     }
 
-    private func scaffold(url: URL, name: String, useCase: String) {
+    private func scaffold(url: URL, name: String, skill: SkillPack, useCase: String) {
         let manager = FolderManager(root: url)
-        try? manager.scaffold(skill: .founder, name: name, useCase: useCase)
-        // Persist so reopening the workspace restores name + use case
-        HubConfig(name: name, skillPack: .founder, useCase: useCase).save(to: url)
-        step = .scaffolded(url, .founder, name)
+        let createFolders = !skill.folders.isEmpty
+        do {
+            try manager.scaffold(skill: skill, name: name, useCase: useCase, createFolders: createFolders)
+            HubConfig(name: name, skillPack: skill, useCase: useCase).save(to: url)
+            step = .scaffolded(url, skill, name)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
-    // MARK: - Step 4: Scaffolded Confirmation
+    // MARK: - Step 5: Scaffolded Confirmation
 
     private func scaffoldedView(url: URL, skill: SkillPack, name: String) -> some View {
         VStack(spacing: 24) {
@@ -358,6 +444,14 @@ public struct WelcomeView: View {
                     .font(AmplifyFonts.title2)
                     .foregroundStyle(AmplifyColors.inkPrimary)
 
+                HStack(spacing: 6) {
+                    Image(systemName: skill.icon)
+                        .font(.system(size: 12))
+                    Text(skill.displayName)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(AmplifyColors.inkTertiary)
+
                 Text(url.lastPathComponent + "/")
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(AmplifyColors.inkTertiary)
@@ -369,9 +463,9 @@ public struct WelcomeView: View {
                     .foregroundStyle(AmplifyColors.inkPrimary)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("1. Drop past writing into references/")
-                    Text("2. Ask Claude to \"create voice dna\" in the terminal")
-                    Text("3. Start writing!")
+                    ForEach(skill.nextSteps, id: \.self) { step in
+                        Text(step)
+                    }
                 }
                 .font(.body)
                 .foregroundStyle(AmplifyColors.inkSecondary)
@@ -385,5 +479,53 @@ public struct WelcomeView: View {
 
             Spacer()
         }
+    }
+}
+
+// MARK: - BoilerplateCard
+
+struct BoilerplateCard: View {
+    let skill: SkillPack
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 14) {
+                Image(systemName: skill.icon)
+                    .font(.system(size: 20))
+                    .foregroundStyle(AmplifyColors.accent)
+                    .frame(width: 36)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(skill.displayName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AmplifyColors.inkPrimary)
+
+                    Text(skill.tagline)
+                        .font(.system(size: 12))
+                        .foregroundStyle(AmplifyColors.inkSecondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AmplifyColors.inkTertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isHovered ? AmplifyColors.selectionTint : AmplifyColors.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(AmplifyColors.inkTertiary.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }

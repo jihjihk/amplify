@@ -1,25 +1,23 @@
 import SwiftUI
-import MarkupEditor
 import Combine
-import WebKit
 
-/// A WYSIWYG editor panel that displays and edits a selected WritingPiece.
-///
-/// The MarkupEditorView (WKWebView) is kept always-mounted to avoid the cold-start
-/// lag from recreating the web content process on every file selection.
-/// The placeholder is shown as an overlay when no file is selected.
+private struct EditorSaveRequest: Sendable {
+    let fileURL: URL
+    let text: String
+    let baseText: String
+}
+
+/// A markdown editor that preserves the exact file formatting on disk.
 public struct EditorView: View {
     @ObservedObject var viewModel: HubViewModel
-    @StateObject private var editorDelegate = EditorInputDelegate()
 
-    @State private var htmlContent: String = ""
-    @State private var saveSubject = PassthroughSubject<String, Never>()
+    @State private var draftText: String = ""
+    @State private var loadedFileURL: URL?
+    @State private var loadedDiskText: String = ""
+    @State private var saveSubject = PassthroughSubject<EditorSaveRequest, Never>()
     @State private var saveCancellable: AnyCancellable?
-    @State private var isSaving = false
-
-    @State private var showFind = false
-    @State private var findQuery = ""
-    @FocusState private var findFieldFocused: Bool
+    @State private var isProgrammaticChange = false
+    @State private var editorNotice: String?
 
     public init(viewModel: HubViewModel) {
         self.viewModel = viewModel
@@ -27,75 +25,45 @@ public struct EditorView: View {
 
     public var body: some View {
         ZStack(alignment: .topLeading) {
-            // Always-mounted editor — WKWebView persists across file selections
             VStack(spacing: 0) {
                 if let piece = viewModel.selectedFile {
                     titleBar(for: piece)
                     Divider().overlay(AmplifyColors.barBg.opacity(0.5))
                 }
-                MarkupEditorView(
-                    markupDelegate: editorDelegate,
-                    html: $htmlContent
-                )
-            }
 
-            // Placeholder overlay — shown when no file is selected
+                if let editorNotice, loadedFileURL != nil {
+                    noticeBar(editorNotice)
+                }
+
+                if viewModel.selectedFile != nil {
+                    TextEditor(text: $draftText)
+                        .font(.system(size: 15, weight: .regular, design: .monospaced))
+                        .foregroundStyle(AmplifyColors.inkPrimary)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(AmplifyColors.surface)
+                        .onChange(of: draftText) { _, newValue in
+                            handleDraftChange(newValue)
+                        }
+                }
+            }
+            .background(AmplifyColors.surface)
+
             if viewModel.selectedFile == nil {
                 placeholderView()
                     .background(AmplifyColors.surface)
             }
-
-            // Find bar overlay
-            if showFind {
-                FindBar(
-                    query: $findQuery,
-                    isFocused: $findFieldFocused,
-                    onNext: { editorDelegate.findText(findQuery, forward: true) },
-                    onPrev: { editorDelegate.findText(findQuery, forward: false) },
-                    onDismiss: {
-                        withAnimation { showFind = false }
-                        findQuery = ""
-                        editorDelegate.clearFind()
-                    }
-                )
-                .padding(.top, viewModel.selectedFile != nil ? 56 : 0)
-                .padding(.trailing, 16)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(10)
-            }
         }
-        .background(
-            Button("") {
-                withAnimation(.easeInOut(duration: 0.15)) { showFind.toggle() }
-                if showFind {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        findFieldFocused = true
-                    }
-                } else {
-                    editorDelegate.clearFind()
-                }
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .hidden()
-        )
         .onAppear {
             setupDebouncedSave()
-        }
-        .onChange(of: editorDelegate.capturedHTML) { _, html in
-            guard !isSaving else { return }
-            saveSubject.send(html)
+            syncSelectedFileFromDisk(forceReload: true)
         }
         .onChange(of: viewModel.selectedFile?.filePath) {
-            if let piece = viewModel.selectedFile {
-                loadContent(from: piece)
-            } else {
-                htmlContent = ""
-            }
+            syncSelectedFileFromDisk(forceReload: true)
         }
-        .onChange(of: viewModel.selectedFile?.body) {
-            guard !isSaving, let piece = viewModel.selectedFile else { return }
-            loadContent(from: piece)
+        .onChange(of: viewModel.reloadRevision) { _, _ in
+            syncSelectedFileFromDisk(forceReload: false)
         }
     }
 
@@ -132,6 +100,31 @@ public struct EditorView: View {
         .background(AmplifyColors.barBg)
     }
 
+    private func noticeBar(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.orange)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(AmplifyColors.inkSecondary)
+                .lineLimit(2)
+
+            Spacer()
+
+            Button("Reload") {
+                reloadSelectedFileFromDisk()
+            }
+            .buttonStyle(.plain)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(AmplifyColors.accent)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(AmplifyColors.barBg)
+    }
+
     // MARK: - Placeholder
 
     @ViewBuilder
@@ -164,383 +157,91 @@ public struct EditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: - Content Loading
-
-    private func loadContent(from piece: WritingPiece) {
-        htmlContent = markdownToHTML(piece.body)
-    }
-
-    // MARK: - Debounced Save
+    // MARK: - Draft Sync
 
     private func setupDebouncedSave() {
         saveCancellable?.cancel()
         saveCancellable = saveSubject
-            .debounce(for: .seconds(1.5), scheduler: RunLoop.main)
-            .sink { [weak viewModel] newHTML in
-                guard let viewModel, var piece = viewModel.selectedFile else { return }
-                let newBody = htmlToMarkdown(newHTML)
-                guard newBody != piece.body else { return }
-                piece.body = newBody
-                piece.frontMatter.edited = FolderManager.todayString()
-                isSaving = true
-                viewModel.savePiece(piece)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    isSaving = false
+            .debounce(for: .seconds(1.0), scheduler: RunLoop.main)
+            .sink { request in
+                do {
+                    let savedText = try viewModel.saveRawDocument(
+                        request.text,
+                        at: request.fileURL,
+                        expectedBaseText: request.baseText
+                    )
+
+                    if loadedFileURL == request.fileURL {
+                        editorNotice = nil
+                        replaceDraftText(savedText, fileURL: request.fileURL, diskText: savedText)
+                    }
+                } catch {
+                    if loadedFileURL == request.fileURL {
+                        editorNotice = error.localizedDescription
+                    } else {
+                        viewModel.noticeMessage = error.localizedDescription
+                    }
                 }
             }
     }
 
-    // MARK: - Editor Style Injection
+    private func handleDraftChange(_ newValue: String) {
+        guard !isProgrammaticChange, let fileURL = loadedFileURL else { return }
+        editorNotice = nil
+        let isDirty = newValue != loadedDiskText
+        viewModel.setDirty(fileURL, isDirty: isDirty)
+        guard isDirty else { return }
+        saveSubject.send(EditorSaveRequest(fileURL: fileURL, text: newValue, baseText: loadedDiskText))
+    }
 
-    /// JavaScript injected into MarkupEditor's WKWebView at document-end.
-    /// Applies the Amplify Parchment Editorial theme.
-    static let editorStyleScript: String = {
-        let css = """
-            /* Amplify Parchment Editorial Theme */
-
-            /* ── Design tokens ──────────────────────────────── */
-            :root {
-                --bg:           #F7F4EF;
-                --ink:          #1A1713;
-                --ink-2:        #2C2520;
-                --ink-3:        #6B6157;
-                --ink-4:        #9C9188;
-                --toolbar-bg:   #F2EDE4;
-                --sep:          rgba(26,23,19,0.09);
-                --mark-warm:    rgba(212,165,80,0.26);
-                --mark-red:     rgba(198,82,82,0.20);
-                --mark-green:   rgba(72,156,92,0.22);
-                --code-bg:      rgba(26,23,19,0.07);
-                --btn-hover:    rgba(26,23,19,0.07);
-                --btn-active:   rgba(26,23,19,0.12);
-            }
-            @media (prefers-color-scheme: dark) {
-                :root {
-                    --bg:         #201D19;
-                    --ink:        #EDE8DF;
-                    --ink-2:      #D4CEC7;
-                    --ink-3:      #9C9188;
-                    --ink-4:      #6B6157;
-                    --toolbar-bg: #1A1713;
-                    --sep:        rgba(237,232,223,0.09);
-                    --mark-warm:  rgba(212,165,80,0.22);
-                    --mark-red:   rgba(198,82,82,0.18);
-                    --mark-green: rgba(72,156,92,0.18);
-                    --code-bg:    rgba(237,232,223,0.08);
-                    --btn-hover:  rgba(237,232,223,0.08);
-                    --btn-active: rgba(237,232,223,0.13);
-                }
-            }
-
-            /* ── Editor surface ──────────────────────────────── */
-            #editor, .editor {
-                font-family: Georgia, 'Times New Roman', serif !important;
-                background: var(--bg) !important;
-                color: var(--ink) !important;
-            }
-            .ProseMirror {
-                max-width: 640px !important;
-                margin: 0 auto !important;
-                padding: 56px 40px 120px !important;
-                font-size: 17px !important;
-                line-height: 1.85 !important;
-                caret-color: var(--ink) !important;
-                outline: none !important;
-            }
-
-            /* ── Headings ─────────────────────────────────────── */
-            h1 {
-                font-family: 'Instrument Serif', Georgia, serif !important;
-                font-size: 2.1em !important;
-                font-weight: 400 !important;
-                line-height: 1.2 !important;
-                margin: 0 0 0.6em !important;
-                color: var(--ink) !important;
-                letter-spacing: -0.02em !important;
-            }
-            h2 {
-                font-family: 'Instrument Serif', Georgia, serif !important;
-                font-size: 1.5em !important;
-                font-weight: 400 !important;
-                line-height: 1.3 !important;
-                margin: 2.2em 0 0.4em !important;
-                color: var(--ink) !important;
-                letter-spacing: -0.01em !important;
-            }
-            h3 {
-                font-family: 'Instrument Serif', Georgia, serif !important;
-                font-size: 1.15em !important;
-                font-weight: 400 !important;
-                font-style: italic !important;
-                line-height: 1.4 !important;
-                margin: 1.8em 0 0.3em !important;
-                color: var(--ink-2) !important;
-            }
-
-            /* ── Body ─────────────────────────────────────────── */
-            p, ul, ol {
-                margin: 0 0 1.1em !important;
-                color: var(--ink-2) !important;
-                font-size: 17px !important;
-                line-height: 1.85 !important;
-            }
-            li { margin-bottom: 0.3em !important; }
-            a {
-                color: var(--ink-3) !important;
-                text-decoration-color: var(--sep) !important;
-            }
-            blockquote {
-                border-left: 2px solid var(--sep) !important;
-                margin: 1.5em 0 !important;
-                padding: 0.2em 0 0.2em 1.2em !important;
-                color: var(--ink-3) !important;
-                font-style: italic !important;
-            }
-            p code, li code {
-                font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace !important;
-                background: var(--code-bg) !important;
-                border-radius: 3px !important;
-                padding: 0.05em 0.35em !important;
-                font-size: 0.87em !important;
-                color: var(--ink) !important;
-            }
-
-            /* ── Highlights ──────────────────────────────────── */
-            mark {
-                background: var(--mark-warm) !important;
-                border-radius: 2px !important;
-                padding: 0.05em 0.1em !important;
-                color: inherit !important;
-            }
-            mark.red   { background: var(--mark-red) !important; }
-            mark.green { background: var(--mark-green) !important; }
-
-            :host {
-                display: flex !important;
-                flex-direction: column !important;
-                background: var(--bg) !important;
-            }
-
-            /* ── Toolbar ─────────────────────────────────────── */
-            .Markup-toolbar, .Markup-toolbar-more {
-                position: sticky !important;
-                top: 0 !important;
-                z-index: 100 !important;
-                background: var(--toolbar-bg) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                border-bottom: 1px solid var(--sep) !important;
-                padding: 4px 8px !important;
-                gap: 4px !important;
-                align-items: center !important;
-                color: var(--ink-4) !important;
-                fill: var(--ink-4) !important;
-            }
-            /* Dropdowns inherit from toolbar — make explicit so they're never transparent */
-            .Markup-menu-dropdown-menu,
-            .Markup-menu-submenu,
-            .Markup-menu-tablesizer {
-                background: var(--toolbar-bg) !important;
-                border: 1px solid var(--sep) !important;
-            }
-            .Markup-menu-dropdown-wrap,
-            .Markup-menu-dropdown-icon-wrap,
-            .Markup-menu-dropdown-icon-wrap-noindicator,
-            .Markup-menu-dropdown {
-                background: var(--toolbar-bg) !important;
-            }
-            .Markup-menuitem {
-                width: 28px !important;
-                height: 28px !important;
-                min-width: 28px !important;
-                border-radius: 6px !important;
-                background: transparent !important;
-                border: none !important;
-                color: var(--ink-4) !important;
-                fill: var(--ink-4) !important;
-                font-size: 13px !important;
-                font-weight: 500 !important;
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
-                display: inline-flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                cursor: pointer !important;
-                transition: background 0.12s ease, color 0.12s ease, fill 0.12s ease !important;
-            }
-            .Markup-menuitem:hover {
-                background: var(--btn-hover) !important;
-                color: var(--ink-3) !important;
-                fill: var(--ink-3) !important;
-            }
-            .Markup-menuitem-active {
-                background: var(--btn-active) !important;
-                color: var(--ink-2) !important;
-                fill: var(--ink-2) !important;
-            }
-            .Markup-menuitem svg, .Markup-icon svg {
-                fill: inherit !important;
-            }
-            .Markup-menuseparator {
-                display: inline-block !important;
-                width: 1px !important;
-                min-height: 16px !important;
-                height: 16px !important;
-                background: var(--sep) !important;
-                border: none !important;
-                border-right: none !important;
-                margin: 0 4px !important;
-                align-self: center !important;
-                vertical-align: middle !important;
-            }
-            .Markup-icon {
-                width: 24px !important;
-                height: 24px !important;
-                flex-shrink: 0 !important;
-                fill: inherit !important;
-            }
-        """
-
-        // Called via evaluateJavaScript from markupDidLoad — by that point MarkupEditor's
-        // custom element connectedCallback has fully run and the shadow root is initialized.
-        // We inject a <style> tag into the shadow root. A MutationObserver guards against
-        // the tag being removed if MarkupEditor ever re-initializes its shadow DOM.
-        return """
-        (function() {
-            var css = \(escapeJSString(css));
-            var TAG_ID = '__amplify-theme';
-
-            function injectStyle(sr) {
-                var existing = sr.querySelector('#' + TAG_ID);
-                if (existing) return;
-                var style = document.createElement('style');
-                style.id = TAG_ID;
-                style.textContent = css;
-                sr.appendChild(style);
-            }
-
-            var host = document.querySelector('markup-editor');
-            if (!host || !host.shadowRoot) return;
-            var sr = host.shadowRoot;
-            injectStyle(sr);
-
-            // Re-inject if MarkupEditor removes our tag during content reloads
-            new MutationObserver(function() {
-                if (!sr.querySelector('#' + TAG_ID)) injectStyle(sr);
-            }).observe(sr, { childList: true, subtree: false });
-        })();
-        """
-    }()
-
-    // MARK: - Markdown <-> HTML Conversion
-
-    private func markdownToHTML(_ markdown: String) -> String {
-        let lines = markdown.components(separatedBy: "\n")
-        var html: [String] = []
-        for var line in lines {
-            if line.hasPrefix("### ") {
-                line = "<h3>\(applyInlineFormatting(String(line.dropFirst(4))))</h3>"
-            } else if line.hasPrefix("## ") {
-                line = "<h2>\(applyInlineFormatting(String(line.dropFirst(3))))</h2>"
-            } else if line.hasPrefix("# ") {
-                line = "<h1>\(applyInlineFormatting(String(line.dropFirst(2))))</h1>"
-            } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                html.append("")
-                continue
-            } else {
-                line = "<p>\(applyInlineFormatting(line))</p>"
-            }
-            html.append(line)
+    private func syncSelectedFileFromDisk(forceReload: Bool) {
+        guard let fileURL = viewModel.selectedFile?.filePath else {
+            loadedFileURL = nil
+            loadedDiskText = ""
+            draftText = ""
+            editorNotice = nil
+            return
         }
-        return html.joined(separator: "\n")
-    }
 
-    private func htmlToMarkdown(_ html: String) -> String {
-        var text = html
-        text = text.replacingOccurrences(of: "<h1>", with: "# ")
-        text = text.replacingOccurrences(of: "</h1>", with: "")
-        text = text.replacingOccurrences(of: "<h2>", with: "## ")
-        text = text.replacingOccurrences(of: "</h2>", with: "")
-        text = text.replacingOccurrences(of: "<h3>", with: "### ")
-        text = text.replacingOccurrences(of: "</h3>", with: "")
-        text = text.replacingOccurrences(of: "<b>", with: "**")
-        text = text.replacingOccurrences(of: "</b>", with: "**")
-        text = text.replacingOccurrences(of: "<strong>", with: "**")
-        text = text.replacingOccurrences(of: "</strong>", with: "**")
-        text = text.replacingOccurrences(of: "<i>", with: "*")
-        text = text.replacingOccurrences(of: "</i>", with: "*")
-        text = text.replacingOccurrences(of: "<em>", with: "*")
-        text = text.replacingOccurrences(of: "</em>", with: "*")
-        text = text.replacingOccurrences(of: "<p>", with: "")
-        text = text.replacingOccurrences(of: "</p>", with: "\n")
-        text = text.replacingOccurrences(of: "<br>", with: "\n")
-        text = text.replacingOccurrences(of: "<br/>", with: "\n")
-        text = text.replacingOccurrences(of: "<br />", with: "\n")
-        while let startRange = text.range(of: "<"),
-              let endRange = text.range(of: ">", range: startRange.upperBound..<text.endIndex) {
-            text.removeSubrange(startRange.lowerBound...endRange.lowerBound)
+        guard let diskText = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            editorNotice = "Couldn't read \(fileURL.lastPathComponent)."
+            return
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 
-    private func applyInlineFormatting(_ text: String) -> String {
-        var result = text
-        result = result.replacingOccurrences(
-            of: "\\*\\*(.+?)\\*\\*", with: "<b>$1</b>", options: .regularExpression)
-        result = result.replacingOccurrences(
-            of: "\\*(.+?)\\*", with: "<i>$1</i>", options: .regularExpression)
-        return result
-    }
-}
+        let switchedFiles = loadedFileURL != fileURL
+        if switchedFiles || forceReload {
+            editorNotice = nil
+            replaceDraftText(diskText, fileURL: fileURL, diskText: diskText)
+            return
+        }
 
-// MARK: - EditorInputDelegate
-
-/// Receives `markupInput` from MarkupEditor on every user keystroke,
-/// async-fetches the current HTML, and publishes it for the save pipeline.
-final class EditorInputDelegate: ObservableObject, MarkupDelegate {
-    @Published var capturedHTML: String = ""
-    weak var webView: MarkupWKWebView?
-
-    func markupInput(_ view: MarkupWKWebView) {
-        view.getHtml(pretty: false, clean: true) { [weak self] html in
-            guard let self, let html else { return }
-            DispatchQueue.main.async { self.capturedHTML = html }
+        if draftText == loadedDiskText {
+            editorNotice = nil
+            replaceDraftText(diskText, fileURL: fileURL, diskText: diskText)
+        } else if diskText != loadedDiskText {
+            editorNotice = "\(fileURL.lastPathComponent) changed on disk while you had local edits."
         }
     }
 
-    func markupDidLoad(_ view: MarkupWKWebView, handler: (() -> Void)?) {
-        webView = view
-        handler?()
-        // Inject theme now — markupDidLoad fires after MarkupEditor's full JS init,
-        // so the shadow root is guaranteed to be set up. This avoids the race condition
-        // that caused userScripts injection (which runs at documentEnd, before the
-        // custom element's connectedCallback) to be overwritten by MarkupEditor's init.
-        view.evaluateJavaScript(EditorView.editorStyleScript) { _, _ in }
+    private func reloadSelectedFileFromDisk() {
+        guard let fileURL = loadedFileURL,
+              let diskText = try? String(contentsOf: fileURL, encoding: .utf8)
+        else { return }
+
+        editorNotice = nil
+        replaceDraftText(diskText, fileURL: fileURL, diskText: diskText)
     }
 
-    func findText(_ query: String, forward: Bool = true) {
-        guard !query.isEmpty, let webView else { return }
-        let config = WKFindConfiguration()
-        config.backwards = !forward
-        config.wraps = true
-        config.caseSensitive = false
-        webView.find(query, configuration: config) { _ in }
+    private func replaceDraftText(_ text: String, fileURL: URL, diskText: String) {
+        isProgrammaticChange = true
+        loadedFileURL = fileURL
+        loadedDiskText = diskText
+        draftText = text
+        viewModel.setDirty(fileURL, isDirty: false)
+        DispatchQueue.main.async {
+            isProgrammaticChange = false
+        }
     }
-
-    func clearFind() {
-        guard let webView else { return }
-        webView.find("", configuration: WKFindConfiguration()) { _ in }
-    }
-}
-
-// MARK: - JS Escape Helper
-
-/// Escapes a Swift string for embedding in a JavaScript template literal.
-private func escapeJSString(_ s: String) -> String {
-    let escaped = s
-        .replacingOccurrences(of: "\\", with: "\\\\")
-        .replacingOccurrences(of: "`", with: "\\`")
-        .replacingOccurrences(of: "$", with: "\\$")
-    return "`\(escaped)`"
 }
 
 // MARK: - StarterCommandRow
@@ -568,57 +269,5 @@ struct StarterCommandRow: View {
 
             Spacer()
         }
-    }
-}
-
-// MARK: - FindBar
-
-struct FindBar: View {
-    @Binding var query: String
-    @FocusState.Binding var isFocused: Bool
-    let onNext: () -> Void
-    let onPrev: () -> Void
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            TextField("Find", text: $query)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .focused($isFocused)
-                .frame(width: 180)
-                .onSubmit { onNext() }
-                .onChange(of: query) { _, _ in onNext() }
-
-            Button(action: onPrev) {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .help("Previous match")
-
-            Button(action: onNext) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .help("Next match")
-
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .help("Close")
-        }
-        .foregroundStyle(AmplifyColors.inkSecondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(AmplifyColors.barBg)
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-        )
-        .onExitCommand { onDismiss() }
     }
 }

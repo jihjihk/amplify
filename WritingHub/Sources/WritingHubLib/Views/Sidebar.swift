@@ -74,6 +74,67 @@ public struct Sidebar: View {
     }
 }
 
+struct SidebarTopBar: View {
+    @Binding var showSidebar: Bool
+    @Binding var searchQuery: String
+    let onShowSearch: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showSidebar.toggle() }
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 13))
+                    .foregroundStyle(showSidebar ? AmplifyColors.inkSecondary : AmplifyColors.inkTertiary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(AmplifyColors.surface)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Toggle Sidebar (⌘\\)")
+            .keyboardShortcut("\\", modifiers: .command)
+
+            if showSidebar {
+                Button(action: onShowSearch) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AmplifyColors.inkTertiary)
+
+                        Text(searchQuery.isEmpty ? "Search workspace..." : searchQuery)
+                            .font(.system(size: 12))
+                            .foregroundStyle(searchQuery.isEmpty ? AmplifyColors.inkTertiary : AmplifyColors.inkPrimary)
+                            .lineLimit(1)
+                            .padding(.trailing, 10)
+
+                        Spacer(minLength: 0)
+
+                        Text("⌘⇧F")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AmplifyColors.inkTertiary)
+                            .padding(.leading, 8)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AmplifyColors.surface)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("Global Search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(AmplifyColors.barBg)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
 // MARK: - WorkspaceItemRow
 
 public struct WorkspaceItemRow: View {

@@ -1,114 +1,94 @@
 import Foundation
-import Testing
+import XCTest
 @testable import WritingHubLib
 
-@Suite("FolderManager Tests")
-struct FolderManagerTests {
-    let tempDir: URL
-
-    init() throws {
-        tempDir = FileManager.default.temporaryDirectory
+final class FolderManagerTests: XCTestCase {
+    private func makeTempDir() throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("WritingHubTest-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        return tempDir
     }
 
-    func cleanup() {
-        try? FileManager.default.removeItem(at: tempDir)
-    }
-
-    // MARK: - Test 1: scaffold creates .writinghub and CLAUDE.md
-
-    @Test("scaffold creates .writinghub directory and CLAUDE.md")
     func testScaffoldCreatesBaseStructure() throws {
-        defer { cleanup() }
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
         try manager.scaffold()
 
         let fm = FileManager.default
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent(".writinghub").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("CLAUDE.md").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent(".writinghub").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("CLAUDE.md").path))
 
         let claudeContent = try String(contentsOf: tempDir.appendingPathComponent("CLAUDE.md"), encoding: .utf8)
-        #expect(claudeContent.contains("Amplify"))
+        XCTAssertTrue(claudeContent.contains("Amplify"))
     }
 
-    // MARK: - Test 2: scaffold creates skill-specific folders
-
-    @Test("scaffold creates founder skill folders")
     func testScaffoldFounderFolders() throws {
-        defer { cleanup() }
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
         try manager.scaffold(skill: .founder)
 
         let fm = FileManager.default
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("ideas").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("drafts").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("published").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("references").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("ideas").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("drafts").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("published").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("references").path))
     }
 
-    @Test("scaffold creates marketing skill folders")
     func testScaffoldMarketingFolders() throws {
-        defer { cleanup() }
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
         try manager.scaffold(skill: .marketingManager)
 
         let fm = FileManager.default
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("strategy").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("campaigns").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("content").path))
-        #expect(fm.fileExists(atPath: tempDir.appendingPathComponent("references").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("strategy").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("campaigns").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("content").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("references").path))
     }
 
-    // MARK: - Test 3: loadWorkspaceFiles returns file tree
-
-    @Test("loadWorkspaceFiles returns non-hidden files")
     func testLoadWorkspaceFiles() throws {
-        defer { cleanup() }
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
         try manager.scaffold(skill: .hobbyWriter)
 
-        // Write a test file
         let filePath = tempDir.appendingPathComponent("drafts/test.md")
         try "# Test".write(to: filePath, atomically: true, encoding: .utf8)
 
         let files = manager.loadWorkspaceFiles()
-        // Should include drafts/ folder (which contains test.md), published/, references/
-        #expect(!files.isEmpty)
-
-        // CLAUDE.md should be at root level
-        let claudeFile = files.first(where: { $0.name == "CLAUDE.md" })
-        #expect(claudeFile != nil)
+        XCTAssertFalse(files.isEmpty)
+        XCTAssertNotNil(files.first(where: { $0.name == "CLAUDE.md" }))
     }
 
-    // MARK: - Test 4: scaffold embeds name and useCase
-
-    @Test("scaffold embeds name and useCase in CLAUDE.md")
     func testScaffoldEmbedsMeta() throws {
-        defer { cleanup() }
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
         let manager = FolderManager(root: tempDir)
         try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
+
         let content = try String(contentsOf: tempDir.appendingPathComponent("CLAUDE.md"), encoding: .utf8)
-        #expect(content.contains("Ji"))
-        #expect(content.contains("Founder building audience"))
+        XCTAssertTrue(content.contains("Ji"))
+        XCTAssertTrue(content.contains("Founder building audience"))
     }
 
-    // MARK: - Test 5: savePiece writes to disk
-
-    @Test("savePiece writes piece to disk with updated edited date")
     func testSavePiece() throws {
-        defer { cleanup() }
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let manager = FolderManager(root: tempDir)
         try manager.scaffold()
 
         let filePath = tempDir.appendingPathComponent("drafts/save-test.md")
-        let fm = FileManager.default
-        try fm.createDirectory(
+        try FileManager.default.createDirectory(
             at: tempDir.appendingPathComponent("drafts"),
             withIntermediateDirectories: true
         )
@@ -120,9 +100,84 @@ struct FolderManagerTests {
         )
         try manager.savePiece(piece)
 
-        #expect(fm.fileExists(atPath: filePath.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: filePath.path))
         let content = try String(contentsOf: filePath, encoding: .utf8)
-        #expect(content.contains("Save Test"))
-        #expect(content.contains("Test body content."))
+        XCTAssertTrue(content.contains("Save Test"))
+        XCTAssertTrue(content.contains("Test body content."))
+    }
+
+    func testSaveMarkdownDocumentPreservesFormatting() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        let filePath = tempDir.appendingPathComponent("drafts/formatting.md")
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent("drafts"),
+            withIntermediateDirectories: true
+        )
+
+        let original = """
+        ---
+        title: Formatting
+        edited: 2026-03-01
+        ---
+
+        First paragraph.
+
+        - bullet one
+        - bullet two
+
+        Second paragraph.
+
+        """
+
+        let saved = try manager.saveMarkdownDocument(original, to: filePath)
+
+        XCTAssertTrue(saved.contains("First paragraph.\n\n- bullet one\n- bullet two\n\nSecond paragraph."))
+        XCTAssertTrue(saved.hasSuffix("\n"))
+        XCTAssertEqual(try String(contentsOf: filePath, encoding: .utf8), saved)
+    }
+
+    func testLoadWorkspaceSnapshotLimit() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder)
+
+        for index in 0..<10 {
+            let file = tempDir.appendingPathComponent("drafts/file-\(index).md")
+            try "test".write(to: file, atomically: true, encoding: .utf8)
+        }
+
+        let snapshot = manager.loadWorkspaceSnapshot(limit: WorkspaceLoadLimit(maxEntries: 5, maxDepth: 12))
+
+        XCTAssertTrue(snapshot.wasLimited)
+        XCTAssertNotNil(snapshot.warningMessage)
+        XCTAssertLessThanOrEqual(snapshot.fileCount + snapshot.folderCount, 5)
+    }
+
+    func testSearchWorkspaceLimit() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder)
+
+        for index in 0..<6 {
+            let file = tempDir.appendingPathComponent("drafts/search-\(index).md")
+            try "needle \(index)".write(to: file, atomically: true, encoding: .utf8)
+        }
+
+        let snapshot = manager.searchWorkspace(
+            query: "needle",
+            limit: WorkspaceSearchLimit(maxFilesToScan: 3, maxResults: 20, maxFileSizeBytes: 1024)
+        )
+
+        XCTAssertTrue(snapshot.wasLimited)
+        XCTAssertNotNil(snapshot.warningMessage)
+        XCTAssertEqual(snapshot.filesScanned, 3)
+        XCTAssertLessThanOrEqual(snapshot.matches.count, 3)
     }
 }

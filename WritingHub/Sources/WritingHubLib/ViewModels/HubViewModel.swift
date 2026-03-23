@@ -14,10 +14,14 @@ public class HubViewModel: ObservableObject {
     @Published public var activeTabIndex: Int = 0
     @Published public var dirtyTabPaths: Set<URL> = []
     @Published public var workspaceFiles: [WorkspaceItem] = []
+    @Published public var loadedFileCount: Int = 0
+    @Published public var workspaceWarning: String? = nil
+    @Published public var noticeMessage: String? = nil
     @Published public var isHubOpen: Bool = false
     @Published public var config: HubConfig = HubConfig()
     @Published public var skillPack: SkillPack = .founder
     @Published public var fileClipboard: FileClipboard? = nil
+    @Published public private(set) var reloadRevision: Int = 0
 
     public var selectedFile: WritingPiece? {
         get { openTabs.indices.contains(activeTabIndex) ? openTabs[activeTabIndex] : nil }
@@ -36,6 +40,15 @@ public class HubViewModel: ObservableObject {
 
     /// Scaffold the folder structure, initialize git, start the file watcher, and load files.
     public func openFolder(_ url: URL, skill: SkillPack = .founder, name: String = "you", useCase: String = "") throws {
+        fileWatcher?.stop()
+        cancellables.removeAll()
+        openTabs.removeAll()
+        activeTabIndex = 0
+        workspaceFiles.removeAll()
+        loadedFileCount = 0
+        dirtyTabPaths.removeAll()
+        noticeMessage = nil
+        workspaceWarning = nil
         self.skillPack = skill
 
         let manager = FolderManager(root: url)
@@ -85,6 +98,7 @@ public class HubViewModel: ObservableObject {
 
     public func openTab(_ piece: WritingPiece) {
         if let idx = openTabs.firstIndex(where: { $0.filePath == piece.filePath }) {
+            openTabs[idx] = piece
             activeTabIndex = idx
         } else {
             openTabs.append(piece)
@@ -125,7 +139,12 @@ public class HubViewModel: ObservableObject {
             activeTabIndex = min(activeTabIndex, openTabs.count - 1)
         }
 
-        workspaceFiles = folderManager.loadWorkspaceFiles()
+        let snapshot = folderManager.loadWorkspaceSnapshot()
+        workspaceFiles = snapshot.items
+        loadedFileCount = snapshot.fileCount
+        workspaceWarning = snapshot.warningMessage
+        dirtyTabPaths = dirtyTabPaths.filter { FileManager.default.fileExists(atPath: $0.path) }
+        reloadRevision += 1
         objectWillChange.send()
     }
 
@@ -142,13 +161,43 @@ public class HubViewModel: ObservableObject {
             if let path = piece.filePath {
                 dirtyTabPaths.remove(path)
             }
-            try gitService?.autoCommit(
-                message: "Update \(piece.filePath?.lastPathComponent ?? "piece")"
-            )
+            if let path = piece.filePath {
+                do {
+                    try gitService?.autoCommit(
+                        message: "Update \(path.lastPathComponent)",
+                        paths: [path]
+                    )
+                } catch {
+                    noticeMessage = error.localizedDescription
+                }
+            }
             reload()
         } catch {
-            print("[HubViewModel] save error: \(error.localizedDescription)")
+            noticeMessage = "Couldn't save \(piece.filePath?.lastPathComponent ?? "document"): \(error.localizedDescription)"
         }
+    }
+
+    @discardableResult
+    public func saveRawDocument(_ text: String, at fileURL: URL, expectedBaseText: String) throws -> String {
+        guard let folderManager else { throw FolderManagerError.fileNotFound(fileURL.path) }
+
+        let currentDiskText = try String(contentsOf: fileURL, encoding: .utf8)
+        guard currentDiskText == expectedBaseText || currentDiskText == text else {
+            throw HubSaveError.externalChangeConflict(fileURL.lastPathComponent)
+        }
+
+        fileWatcher?.markSelfWrite(fileURL.path)
+        let savedText = try folderManager.saveMarkdownDocument(text, to: fileURL)
+        dirtyTabPaths.remove(fileURL)
+
+        do {
+            try gitService?.autoCommit(message: "Update \(fileURL.lastPathComponent)", paths: [fileURL])
+        } catch {
+            noticeMessage = error.localizedDescription
+        }
+
+        reload()
+        return savedText
     }
 
     // MARK: - File Clipboard
@@ -182,16 +231,7 @@ public class HubViewModel: ObservableObject {
 
     /// Returns total count of files in workspace.
     public func fileCount() -> Int {
-        countFiles(in: workspaceFiles)
-    }
-
-    private func countFiles(in items: [WorkspaceItem]) -> Int {
-        items.reduce(0) { count, item in
-            if item.isDirectory {
-                return count + countFiles(in: item.children)
-            }
-            return count + 1
-        }
+        loadedFileCount
     }
 
     // MARK: - Context File
@@ -217,6 +257,25 @@ public class HubViewModel: ObservableObject {
             try? content.write(to: contextURL, atomically: true, encoding: .utf8)
         } else {
             try? "".write(to: contextURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    public func setDirty(_ fileURL: URL, isDirty: Bool) {
+        if isDirty {
+            dirtyTabPaths.insert(fileURL)
+        } else {
+            dirtyTabPaths.remove(fileURL)
+        }
+    }
+}
+
+public enum HubSaveError: Error, LocalizedError {
+    case externalChangeConflict(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .externalChangeConflict(let filename):
+            return "\(filename) changed on disk before autosave completed. Reload it or save again after reviewing the external edits."
         }
     }
 }

@@ -15,6 +15,17 @@ public struct StatusBar: View {
 
             Text("\(viewModel.fileCount()) files")
 
+            if let workspaceWarning = viewModel.workspaceWarning {
+                Label(workspaceWarning, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.orange)
+                    .lineLimit(1)
+            }
+
+            if let noticeMessage = viewModel.noticeMessage {
+                Label(noticeMessage, systemImage: "info.circle")
+                    .lineLimit(1)
+            }
+
             Spacer()
         }
         .font(.system(size: 11))
