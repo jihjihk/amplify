@@ -21,7 +21,11 @@ let package = Package(
         .executableTarget(
             name: "WritingHub",
             dependencies: ["WritingHubLib"],
-            path: "Sources/WritingHub"
+            path: "Sources/WritingHub",
+            exclude: [
+                "Amplify.entitlements",
+                "Info.plist",
+            ]
         ),
         .testTarget(
             name: "WritingHubTests",

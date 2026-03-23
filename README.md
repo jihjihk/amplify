@@ -31,6 +31,13 @@ Note-taking apps send individual files to AI with zero context about your voice,
 
 **Requires:** macOS 14 Sonoma or later · [Claude Code](https://claude.ai/code) installed
 
+## Updating
+
+- Amplify can check GitHub Releases from inside the app via `Updates > Check for Updates…`
+- Manual installs still use the DMG from the latest GitHub release
+- In-app updates download the ZIP release asset and replace the running `.app` bundle automatically when possible
+- If Amplify is not running from a writable `.app` bundle, the updater falls back to opening the GitHub release page
+
 ## Commands
 
 | Command | What it does |
@@ -53,6 +60,24 @@ cd amplify/WritingHub
 swift build
 swift run
 ```
+
+## Releasing
+
+Amplify releases are triggered by Git tags that match `v*`.
+
+```bash
+git checkout main
+git pull
+git tag v1.0.2
+git push origin main
+git push origin v1.0.2
+```
+
+The release workflow will:
+
+- build the macOS app
+- set the app bundle version from the tag, for example `v1.0.2 -> 1.0.2`
+- upload both `Amplify.dmg` for manual installs and `Amplify.zip` for the in-app updater
 
 ## Architecture
 

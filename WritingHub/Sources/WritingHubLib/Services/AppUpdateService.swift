@@ -65,6 +65,16 @@ public struct AppVersion: Comparable, Equatable, Sendable {
         }
         return false
     }
+
+    public static func == (lhs: AppVersion, rhs: AppVersion) -> Bool {
+        let maxCount = max(lhs.components.count, rhs.components.count)
+        for index in 0..<maxCount {
+            let left = index < lhs.components.count ? lhs.components[index] : 0
+            let right = index < rhs.components.count ? rhs.components[index] : 0
+            if left != right { return false }
+        }
+        return true
+    }
 }
 
 public enum AppUpdateState: Equatable, Sendable {
