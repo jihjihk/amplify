@@ -33,40 +33,47 @@ public struct ContentView: View {
                 onCheckForUpdates: { updateService.checkForUpdates() }
             )
 
-            HSplitView {
-                VStack(spacing: 0) {
-                    SidebarTopBar(
-                        showSidebar: $showSidebar,
-                        searchQuery: $searchQuery,
-                        onShowSearch: openSearch
-                    )
-
+            ZStack(alignment: .topLeading) {
+                HSplitView {
                     if showSidebar {
-                        Sidebar(viewModel: viewModel)
-                    }
-                }
-                .frame(minWidth: showSidebar ? 180 : 46,
-                       idealWidth: showSidebar ? 220 : 46,
-                       maxWidth: showSidebar ? 300 : 46)
+                        VStack(spacing: 0) {
+                            SidebarTopBar(
+                                showSidebar: $showSidebar,
+                                searchQuery: $searchQuery,
+                                onShowSearch: openSearch
+                            )
 
-                VStack(spacing: 0) {
-                    if !viewModel.openTabs.isEmpty {
-                        TabBar(viewModel: viewModel)
+                            Sidebar(viewModel: viewModel)
+                        }
+                        .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
                     }
-                    EditorView(viewModel: viewModel)
-                }
-                .frame(minWidth: 400)
 
-                VStack(spacing: 0) {
-                    if let root = viewModel.folderManager?.root {
-                        TerminalTabsView(folderPath: root)
+                    VStack(spacing: 0) {
+                        if !viewModel.openTabs.isEmpty {
+                            TabBar(viewModel: viewModel)
+                        }
+                        EditorView(viewModel: viewModel)
                     }
+                    .frame(minWidth: 400)
+
+                    VStack(spacing: 0) {
+                        if let root = viewModel.folderManager?.root {
+                            TerminalTabsView(folderPath: root)
+                        }
+                    }
+                    .frame(minWidth: showTerminal ? 280 : 0,
+                           idealWidth: 380,
+                           maxWidth: showTerminal ? .infinity : 0)
+                    .opacity(showTerminal ? 1 : 0)
+                    .clipped()
                 }
-                .frame(minWidth: showTerminal ? 280 : 0,
-                       idealWidth: 380,
-                       maxWidth: showTerminal ? .infinity : 0)
-                .opacity(showTerminal ? 1 : 0)
-                .clipped()
+
+                if !showSidebar {
+                    SidebarCollapsedHandle(showSidebar: $showSidebar)
+                        .padding(.top, 7)
+                        .padding(.leading, 8)
+                        .zIndex(5)
+                }
             }
             StatusBar(viewModel: viewModel)
         }
@@ -140,6 +147,28 @@ public struct ContentView: View {
 
     private func openSearch() {
         showSearch = true
+    }
+}
+
+struct SidebarCollapsedHandle: View {
+    @Binding var showSidebar: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { showSidebar = true }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13))
+                .foregroundStyle(AmplifyColors.inkSecondary)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(AmplifyColors.surface)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Show Sidebar (⌘\\)")
+        .keyboardShortcut("\\", modifiers: .command)
     }
 }
 

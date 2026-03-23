@@ -294,15 +294,16 @@ private struct MarkdownTextEditor: NSViewRepresentable {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = MarkdownStyler.surfaceColor
 
+        let contentSize = scrollView.contentSize
         let textStorage = NSTextStorage()
         let layoutManager = NSLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
-        let textContainer = NSTextContainer(containerSize: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        let textContainer = NSTextContainer(containerSize: NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude))
         textContainer.widthTracksTextView = true
         layoutManager.addTextContainer(textContainer)
 
-        let textView = NSTextView(frame: .zero, textContainer: textContainer)
+        let textView = NSTextView(frame: NSRect(origin: .zero, size: contentSize), textContainer: textContainer)
         textView.isRichText = false
         textView.importsGraphics = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -318,7 +319,8 @@ private struct MarkdownTextEditor: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.minSize = NSSize(width: 0, height: 0)
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.autoresizingMask = [.width]
         textView.delegate = context.coordinator
 
         scrollView.documentView = textView
@@ -330,6 +332,10 @@ private struct MarkdownTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         context.coordinator.attach(textView)
+        let contentSize = scrollView.contentSize
+        textView.frame.size.width = contentSize.width
+        textView.minSize.height = contentSize.height
+        textView.textContainer?.containerSize = NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         if !context.coordinator.isApplyingProgrammaticChange, textView.string != session.text {
             context.coordinator.applyStyledText(session.text, to: textView, preserveSelection: true)
         }
