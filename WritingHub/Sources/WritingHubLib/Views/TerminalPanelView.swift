@@ -6,9 +6,13 @@ import AppKit
 /// to provide an embedded terminal panel for running CLI tools such as Claude Code.
 public struct TerminalPanelView: NSViewRepresentable {
     public let folderPath: URL
+    public let isActive: Bool
+    public let focusToken: Int
 
-    public init(folderPath: URL) {
+    public init(folderPath: URL, isActive: Bool, focusToken: Int) {
         self.folderPath = folderPath
+        self.isActive = isActive
+        self.focusToken = focusToken
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -51,7 +55,10 @@ public struct TerminalPanelView: NSViewRepresentable {
     }
 
     public func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
-        // No dynamic updates needed
+        guard isActive else { return }
+        DispatchQueue.main.async {
+            nsView.window?.makeFirstResponder(nsView)
+        }
     }
 
     public class Coordinator {

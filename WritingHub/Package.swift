@@ -16,6 +16,7 @@ let package = Package(
             path: "Sources/WritingHubLib",
             resources: [
                 .copy("Resources/Fonts"),
+                .copy("Resources/markdown-editor.css"),
             ]
         ),
         .executableTarget(

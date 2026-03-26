@@ -113,7 +113,7 @@ public enum GitError: Error, Sendable, LocalizedError {
         case .commandFailed(let args, let status):
             return "Git command failed (\(status)): git \(args.joined(separator: " "))"
         case .missingAuthorIdentity:
-            return "Autosave commit skipped because git user.name and user.email are not configured for this workspace."
+            return "Git auto-commit skipped because git user.name and user.email are not configured for this workspace."
         case .pathOutsideRepo(let path):
             return "Cannot commit a file outside the workspace repo: \(path)"
         }

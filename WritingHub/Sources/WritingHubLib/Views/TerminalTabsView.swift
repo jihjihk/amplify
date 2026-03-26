@@ -9,6 +9,7 @@ struct TerminalTabsView: View {
     let folderPath: URL
     @State private var tabs: [TerminalTab] = [TerminalTab(label: "Terminal 1")]
     @State private var activeTabID: UUID? = nil
+    @State private var focusToken: Int = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,7 +17,7 @@ struct TerminalTabsView: View {
 
             ZStack {
                 ForEach(tabs) { tab in
-                    TerminalPanelView(folderPath: folderPath)
+                    TerminalPanelView(folderPath: folderPath, isActive: tab.id == resolvedActiveID, focusToken: focusToken)
                         .id(tab.id)
                         .opacity(tab.id == resolvedActiveID ? 1 : 0)
                         .allowsHitTesting(tab.id == resolvedActiveID)
@@ -24,7 +25,10 @@ struct TerminalTabsView: View {
             }
         }
         .onAppear {
-            if activeTabID == nil { activeTabID = tabs.first?.id }
+            if activeTabID == nil {
+                activeTabID = tabs.first?.id
+                focusToken += 1
+            }
         }
     }
 
@@ -50,6 +54,7 @@ struct TerminalTabsView: View {
                 let newTab = TerminalTab(label: "Terminal \(tabs.count + 1)")
                 tabs.append(newTab)
                 activeTabID = newTab.id
+                focusToken += 1
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .medium))
@@ -93,7 +98,10 @@ struct TerminalTabsView: View {
         .background(isActive ? AmplifyColors.surface : Color.clear)
         .cornerRadius(4)
         .contentShape(Rectangle())
-        .onTapGesture { activeTabID = tab.id }
+        .onTapGesture {
+            activeTabID = tab.id
+            focusToken += 1
+        }
     }
 
     private func closeTab(_ tab: TerminalTab) {
@@ -104,6 +112,7 @@ struct TerminalTabsView: View {
             if wasActive {
                 let newIdx = min(idx, tabs.count - 1)
                 activeTabID = tabs[newIdx].id
+                focusToken += 1
             }
         }
     }

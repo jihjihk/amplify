@@ -2,7 +2,7 @@
 
 **Write with agents. Sound like yourself.**
 
-A writing IDE for developers who write with AI agents. Amplify gives your agent project-level context — a CLAUDE.md with your voice rules, a voice profile built from your past writing, and clean workspace isolation — so every draft sounds like you, not like AI.
+A writing IDE for developers who write with AI agents. Amplify gives your agent project-level context — an `AGENT_INSTRUCTIONS.md` file with your voice rules, a voice profile built from your past writing, and clean workspace isolation — so every draft sounds like you, not like AI.
 
 [Download for Mac](https://github.com/jihjihk/amplify/releases/latest) · [Landing page](https://jihjihk.github.io/amplify)
 
@@ -14,7 +14,7 @@ A writing IDE for developers who write with AI agents. Amplify gives your agent 
 
 Note-taking apps send individual files to AI with zero context about your voice, your audience, or your workflow. Amplify gives your agent a full project every time.
 
-- **CLAUDE.md at the root** — Like `.eslintrc` for your writing. Voice rules, anti-patterns, and commands that your agent reads on every interaction.
+- **`AGENT_INSTRUCTIONS.md` at the root** — Like `.eslintrc` for your writing. Voice rules, anti-patterns, and commands that your agent reads on every interaction.
 - **Voice DNA** — One command analyzes your past writing and builds a voice profile. Every draft, edit, and brainstorm runs through it automatically.
 - **Isolated workspaces** — Each writing project is its own folder with its own context. Your newsletter and your technical blog don't bleed into each other.
 - **Built-in terminal** — Claude Code runs inside the app. Chain commands, iterate on drafts, see exactly what the agent does.

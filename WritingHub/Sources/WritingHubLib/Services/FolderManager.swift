@@ -61,6 +61,8 @@ public struct WorkspaceSearchSnapshot: Sendable {
 
 public class FolderManager: ObservableObject {
     public let root: URL
+    private static let legacyClaudeFileName = "CLAUDE.md"
+    private static let agentInstructionsReferenceMarker = "<!-- Amplify agent instructions reference -->"
 
     public init(root: URL) {
         self.root = root
@@ -68,7 +70,7 @@ public class FolderManager: ObservableObject {
 
     // MARK: - Scaffold
 
-    /// Creates `.writinghub/`, optionally skill folders, and a personalized CLAUDE.md.
+    /// Creates `.writinghub/`, optionally skill folders, and a personalized agent instructions file.
     public func scaffold(skill: SkillPack = .founder, name: String = "you", useCase: String = "", createFolders: Bool = true) throws {
         let fm = FileManager.default
 
@@ -86,13 +88,50 @@ public class FolderManager: ObservableObject {
             }
         }
 
-        let claudePath = root.appendingPathComponent("CLAUDE.md")
-        try skill.claudeTemplate(name: name, useCase: useCase)
-            .write(to: claudePath, atomically: true, encoding: .utf8)
+        try ensureWorkspaceInstructions(skill: skill, name: name, useCase: useCase)
 
         if skill == .gstack {
             Self.installGstack()
         }
+    }
+
+    public func ensureWorkspaceInstructions(skill: SkillPack, name: String, useCase: String) throws {
+        let instructionsPath = root.appendingPathComponent(WorkspaceInstructionFile.fileName)
+        guard !FileManager.default.fileExists(atPath: instructionsPath.path) else { return }
+        try skill.claudeTemplate(name: name, useCase: useCase)
+            .write(to: instructionsPath, atomically: true, encoding: .utf8)
+    }
+
+    public func needsLegacyClaudeReferencePrompt(config: HubConfig) -> Bool {
+        guard !config.didPromptToLinkLegacyClaudeInstructions else { return false }
+        let claudePath = root.appendingPathComponent(Self.legacyClaudeFileName)
+        let instructionsPath = root.appendingPathComponent(WorkspaceInstructionFile.fileName)
+        guard FileManager.default.fileExists(atPath: claudePath.path),
+              FileManager.default.fileExists(atPath: instructionsPath.path),
+              let content = try? String(contentsOf: claudePath, encoding: .utf8)
+        else {
+            return false
+        }
+
+        return !content.contains(WorkspaceInstructionFile.fileName)
+    }
+
+    public func appendAgentInstructionsReferenceToLegacyClaude() throws {
+        let claudePath = root.appendingPathComponent(Self.legacyClaudeFileName)
+        guard FileManager.default.fileExists(atPath: claudePath.path) else { return }
+
+        let existing = try String(contentsOf: claudePath, encoding: .utf8)
+        guard !existing.contains(WorkspaceInstructionFile.fileName) else { return }
+
+        let separator = existing.hasSuffix("\n\n") ? "" : (existing.hasSuffix("\n") ? "\n" : "\n\n")
+        let referenceBlock = """
+        \(Self.agentInstructionsReferenceMarker)
+        ## Amplify agent instructions
+
+        Also read `\(WorkspaceInstructionFile.fileName)` in this workspace. It contains Amplify's writing-specific guidance, including human-like writing style rules, voice guidance, and anti-patterns.
+        """
+
+        try (existing + separator + referenceBlock + "\n").write(to: claudePath, atomically: true, encoding: .utf8)
     }
 
     /// Runs `claude install-skill garrytan/gstack` in the background.

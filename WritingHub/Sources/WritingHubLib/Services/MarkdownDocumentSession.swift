@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 public final class MarkdownDocumentSession: ObservableObject {
-    @Published public var text: String = ""
+    @Published public var html: String = ""
     @Published public private(set) var title: String = ""
     @Published public private(set) var version: Int?
     @Published public private(set) var editedDate: String?
@@ -20,11 +20,13 @@ public final class MarkdownDocumentSession: ObservableObject {
     private let folderManager: FolderManager
     private let gitService: GitService?
     private let fileWatcher: FileWatcher
+    private var envelope = MarkdownDocumentEnvelope(frontMatterBlock: nil, bodyMarkdown: "", protectedSuffix: nil)
     private var lastLoadedDiskText: String = ""
+    private var lastLoadedHTML: String = ""
     private var saveSubject = PassthroughSubject<String, Never>()
     private var saveCancellable: AnyCancellable?
     private var didStart = false
-    private var isApplyingProgrammaticTextChange = false
+    private var isApplyingProgrammaticChange = false
 
     public init(fileURL: URL, workspaceRoot: URL?) {
         self.fileURL = fileURL.standardizedFileURL
@@ -63,12 +65,27 @@ public final class MarkdownDocumentSession: ObservableObject {
     }
 
     public func updateText(_ newText: String) {
-        guard !isApplyingProgrammaticTextChange else { return }
-        guard newText != text else { return }
-        text = newText
-        setDirty(newText != lastLoadedDiskText)
+        let newHTML = MarkdownRichTextCodec.html(fromMarkdown: newText)
+        updateHTML(newHTML)
+    }
+
+    public func updateHTML(_ newHTML: String) {
+        guard !isApplyingProgrammaticChange else { return }
+        guard newHTML != html else { return }
+        html = newHTML
+        setDirty(newHTML != lastLoadedHTML)
         clearNotice()
-        saveSubject.send(newText)
+        saveSubject.send(newHTML)
+    }
+
+    public func synchronizeLoadedHTML(_ normalizedHTML: String) {
+        guard !isDirty else { return }
+        isApplyingProgrammaticChange = true
+        html = normalizedHTML
+        lastLoadedHTML = normalizedHTML
+        isApplyingProgrammaticChange = false
+        setDirty(false)
+        clearNotice()
     }
 
     public func reloadFromDisk() {
@@ -101,7 +118,7 @@ public final class MarkdownDocumentSession: ObservableObject {
             return
         }
 
-        if force || !isDirty || text == lastLoadedDiskText {
+        if force || !isDirty || html == lastLoadedHTML {
             applyDiskText(diskText)
         } else if diskText != lastLoadedDiskText {
             setNotice("\(fileURL.lastPathComponent) changed on disk while you had local edits.")
@@ -110,17 +127,20 @@ public final class MarkdownDocumentSession: ObservableObject {
 
     private func applyDiskText(_ diskText: String) {
         lastLoadedDiskText = diskText
+        envelope = MarkdownDocumentEnvelope.parse(from: diskText)
         updateMetadata(from: diskText)
-        isApplyingProgrammaticTextChange = true
-        text = diskText
-        isApplyingProgrammaticTextChange = false
+        let renderedHTML = MarkdownRichTextCodec.html(fromMarkdown: envelope.bodyMarkdown)
+        isApplyingProgrammaticChange = true
+        html = renderedHTML
+        lastLoadedHTML = renderedHTML
+        isApplyingProgrammaticChange = false
         setDirty(false)
         clearNotice()
     }
 
     private func autosaveIfNeeded(_ candidateText: String) {
-        guard candidateText == text, candidateText != lastLoadedDiskText else {
-            if candidateText == lastLoadedDiskText {
+        guard candidateText == html, candidateText != lastLoadedHTML else {
+            if candidateText == lastLoadedHTML {
                 setDirty(false)
             }
             return
@@ -136,14 +156,19 @@ public final class MarkdownDocumentSession: ObservableObject {
             onWillSave?(fileURL.path)
             fileWatcher.markSelfWrite(fileURL.path)
 
-            let savedText = try folderManager.saveMarkdownDocument(candidateText, to: fileURL)
+            let bodyMarkdown = MarkdownRichTextCodec.markdown(fromHTML: candidateText)
+            let rebuiltDocument = envelope.rebuild(withBodyMarkdown: bodyMarkdown)
+            let savedText = try folderManager.saveMarkdownDocument(rebuiltDocument, to: fileURL)
             lastLoadedDiskText = savedText
+            envelope = MarkdownDocumentEnvelope.parse(from: savedText)
             updateMetadata(from: savedText)
+            let savedHTML = MarkdownRichTextCodec.html(fromMarkdown: envelope.bodyMarkdown)
+            lastLoadedHTML = savedHTML
 
-            if savedText != text {
-                isApplyingProgrammaticTextChange = true
-                text = savedText
-                isApplyingProgrammaticTextChange = false
+            if savedHTML != html {
+                isApplyingProgrammaticChange = true
+                html = savedHTML
+                isApplyingProgrammaticChange = false
             }
 
             setDirty(false)
@@ -151,6 +176,8 @@ public final class MarkdownDocumentSession: ObservableObject {
 
             do {
                 try gitService?.autoCommit(message: "Update \(fileURL.lastPathComponent)", paths: [fileURL])
+            } catch GitError.missingAuthorIdentity {
+                // Disk autosave still succeeded; missing git identity should not read as a save failure.
             } catch {
                 setNotice(error.localizedDescription)
             }

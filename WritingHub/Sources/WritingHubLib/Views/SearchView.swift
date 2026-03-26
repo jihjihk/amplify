@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SearchResult: Identifiable {
     let id = UUID()
@@ -13,8 +14,10 @@ struct SearchView: View {
     @Binding var isPresented: Bool
     @Binding var query: String
     @State private var results: [SearchResult] = []
+    @State private var selectedResultID: SearchResult.ID?
     @State private var searchNotice: String?
     @State private var searchTask: Task<Void, Never>?
+    @State private var keyMonitor: Any?
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -29,7 +32,13 @@ struct SearchView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($searchFocused)
-                    .onSubmit { performSearch() }
+                    .onSubmit {
+                        if let selected = selectedResult {
+                            openResult(selected)
+                        } else {
+                            performSearch()
+                        }
+                    }
                     .onChange(of: query) { _, _ in performSearch() }
 
                 if !query.isEmpty {
@@ -69,12 +78,24 @@ struct SearchView: View {
                     Spacer()
                 }
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(results) { result in
-                            SearchResultRow(result: result) {
-                                openResult(result)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(results) { result in
+                                SearchResultRow(
+                                    result: result,
+                                    isSelected: result.id == selectedResultID
+                                ) {
+                                    openResult(result)
+                                }
+                                .id(result.id)
                             }
+                        }
+                    }
+                    .onChange(of: selectedResultID) { _, newValue in
+                        guard let newValue else { return }
+                        withAnimation(.easeInOut(duration: 0.12)) {
+                            proxy.scrollTo(newValue, anchor: .center)
                         }
                     }
                 }
@@ -103,8 +124,12 @@ struct SearchView: View {
         .onAppear {
             searchFocused = true
             performSearch()
+            installKeyMonitor()
         }
-        .onDisappear { searchTask?.cancel() }
+        .onDisappear {
+            searchTask?.cancel()
+            removeKeyMonitor()
+        }
         .onExitCommand { isPresented = false }
     }
 
@@ -136,6 +161,11 @@ struct SearchView: View {
                     lineText: $0.lineText
                 )
             }
+            if let selectedResultID, results.contains(where: { $0.id == selectedResultID }) {
+                self.selectedResultID = selectedResultID
+            } else {
+                self.selectedResultID = results.first?.id
+            }
             searchNotice = snapshot.warningMessage
         }
     }
@@ -149,10 +179,72 @@ struct SearchView: View {
         viewModel.openTab(piece)
         isPresented = false
     }
+
+    private var selectedResult: SearchResult? {
+        guard let selectedResultID else { return results.first }
+        return results.first(where: { $0.id == selectedResultID }) ?? results.first
+    }
+
+    private func moveSelection(_ direction: MoveCommandDirection) {
+        guard !results.isEmpty else { return }
+
+        let currentIndex = selectedResult.flatMap { current in
+            results.firstIndex(where: { $0.id == current.id })
+        } ?? 0
+
+        switch direction {
+        case .down:
+            selectedResultID = results[min(currentIndex + 1, results.count - 1)].id
+        case .up:
+            selectedResultID = results[max(currentIndex - 1, 0)].id
+        default:
+            break
+        }
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleKeyEvent(event)
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+    }
+
+    private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        guard isPresented else { return event }
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else { return event }
+
+        switch event.keyCode {
+        case 125:
+            moveSelection(.down)
+            return nil
+        case 126:
+            moveSelection(.up)
+            return nil
+        case 36, 76:
+            if let selected = selectedResult {
+                openResult(selected)
+                return nil
+            }
+            return event
+        case 53:
+            isPresented = false
+            return nil
+        default:
+            return event
+        }
+    }
 }
 
 struct SearchResultRow: View {
     let result: SearchResult
+    let isSelected: Bool
     let onTap: () -> Void
     @State private var isHovered = false
 
@@ -180,7 +272,7 @@ struct SearchResultRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isHovered ? AmplifyColors.selectionTint : Color.clear)
+        .background((isSelected || isHovered) ? AmplifyColors.selectionTint : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .onHover { isHovered = $0 }

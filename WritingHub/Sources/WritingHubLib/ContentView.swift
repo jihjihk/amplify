@@ -10,6 +10,7 @@ public struct ContentView: View {
     @State private var showSearch: Bool = false
     @State private var searchQuery: String = ""
     @State private var workspaceError: String?
+    @State private var claudeReferencePrompt: ClaudeReferencePrompt?
 
     public init() {}
 
@@ -127,27 +128,78 @@ public struct ContentView: View {
         .sheet(isPresented: $updateService.isPresentingSheet) {
             UpdateSheet(service: updateService)
         }
+        .sheet(item: $claudeReferencePrompt) { prompt in
+            LegacyClaudeReferenceSheet(
+                workspaceName: prompt.rootURL.lastPathComponent,
+                onAddReference: { resolveClaudeReferencePrompt(addReference: true) },
+                onSkip: { resolveClaudeReferencePrompt(addReference: false) }
+            )
+        }
     }
 
     private func openFolder(_ url: URL, skill: SkillPack, name: String) {
         let existing = HubConfig.load(from: url)
         let useCase = existing?.useCase ?? ""
         let resolvedName = existing?.name ?? name
+        let resolvedSkill = existing?.skillPack ?? skill
         do {
-            try viewModel.openFolder(url, skill: skill, name: resolvedName, useCase: useCase)
+            try viewModel.openFolder(url, skill: resolvedSkill, name: resolvedName, useCase: useCase)
         } catch {
             workspaceError = error.localizedDescription
             return
         }
-        let config = HubConfig(name: resolvedName, skillPack: skill, useCase: useCase)
-        config.save(to: url)
-        viewModel.config = config
-        viewModel.skillPack = skill
+        let config = HubConfig(
+            name: resolvedName,
+            skillPack: resolvedSkill,
+            useCase: useCase,
+            didPromptToLinkLegacyClaudeInstructions: existing?.didPromptToLinkLegacyClaudeInstructions ?? false
+        )
+        persistConfig(config, to: url)
+        viewModel.skillPack = resolvedSkill
+        prepareClaudeReferencePromptIfNeeded(for: url, config: config)
     }
 
     private func openSearch() {
         showSearch = true
     }
+
+    private func persistConfig(_ config: HubConfig, to rootURL: URL) {
+        config.save(to: rootURL)
+        viewModel.config = config
+    }
+
+    private func prepareClaudeReferencePromptIfNeeded(for rootURL: URL, config: HubConfig) {
+        let manager = FolderManager(root: rootURL)
+        if manager.needsLegacyClaudeReferencePrompt(config: config) {
+            claudeReferencePrompt = ClaudeReferencePrompt(rootURL: rootURL, config: config)
+        }
+    }
+
+    private func resolveClaudeReferencePrompt(addReference: Bool) {
+        guard let prompt = claudeReferencePrompt else { return }
+        let manager = FolderManager(root: prompt.rootURL)
+
+        if addReference {
+            do {
+                try manager.appendAgentInstructionsReferenceToLegacyClaude()
+            } catch {
+                workspaceError = error.localizedDescription
+                return
+            }
+        }
+
+        var updatedConfig = prompt.config
+        updatedConfig.didPromptToLinkLegacyClaudeInstructions = true
+        persistConfig(updatedConfig, to: prompt.rootURL)
+        claudeReferencePrompt = nil
+    }
+}
+
+private struct ClaudeReferencePrompt: Identifiable {
+    let rootURL: URL
+    let config: HubConfig
+
+    var id: String { rootURL.path }
 }
 
 struct SidebarCollapsedHandle: View {
@@ -319,6 +371,47 @@ struct UpdateSheet: View {
                     .fill(AmplifyColors.surface)
             )
         }
+    }
+}
+
+private struct LegacyClaudeReferenceSheet: View {
+    let workspaceName: String
+    let onAddReference: () -> Void
+    let onSkip: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Link existing CLAUDE.md?")
+                .font(AmplifyFonts.title2)
+                .foregroundStyle(AmplifyColors.inkPrimary)
+
+            Text("This workspace already has a `CLAUDE.md`. Amplify now keeps its writing-specific guidance in `AGENT_INSTRUCTIONS.md` so it doesn't overwrite your existing file.")
+                .font(.callout)
+                .foregroundStyle(AmplifyColors.inkSecondary)
+
+            Text("If you want, Amplify can add a short note to `CLAUDE.md` telling your agent to also read `AGENT_INSTRUCTIONS.md` for human-like writing style rules, voice guidance, and anti-patterns.")
+                .font(.callout)
+                .foregroundStyle(AmplifyColors.inkSecondary)
+
+            Label(workspaceName, systemImage: "folder")
+                .font(.caption)
+                .foregroundStyle(AmplifyColors.inkTertiary)
+
+            Spacer()
+
+            HStack {
+                Button("Not Now", action: onSkip)
+                    .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Add Reference", action: onAddReference)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 460, idealWidth: 520, minHeight: 240)
+        .background(AmplifyColors.parchment)
     }
 }
 

@@ -51,6 +51,6 @@ Use GitHub Issues. Include:
 
 - **FolderManager** handles file system operations (scaffold, save, load)
 - **HubViewModel** coordinates FolderManager, FileWatcher, and GitService
-- **SkillPack** defines folder structure + CLAUDE.md template per persona
+- **SkillPack** defines folder structure + agent instructions template per persona
 - **FileWatcher** uses FSEvents with debouncing and self-write tracking
 - **EditorView** uses MarkupEditor for WYSIWYG editing with debounced auto-save

@@ -19,9 +19,9 @@ final class FolderManagerTests: XCTestCase {
 
         let fm = FileManager.default
         XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent(".writinghub").path))
-        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("CLAUDE.md").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent(WorkspaceInstructionFile.fileName).path))
 
-        let claudeContent = try String(contentsOf: tempDir.appendingPathComponent("CLAUDE.md"), encoding: .utf8)
+        let claudeContent = try String(contentsOf: tempDir.appendingPathComponent(WorkspaceInstructionFile.fileName), encoding: .utf8)
         XCTAssertTrue(claudeContent.contains("Amplify"))
     }
 
@@ -48,7 +48,7 @@ final class FolderManagerTests: XCTestCase {
 
         let fm = FileManager.default
         XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent(".writinghub").path))
-        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent("CLAUDE.md").path))
+        XCTAssertTrue(fm.fileExists(atPath: tempDir.appendingPathComponent(WorkspaceInstructionFile.fileName).path))
         XCTAssertFalse(fm.fileExists(atPath: tempDir.appendingPathComponent("ideas").path))
         XCTAssertFalse(fm.fileExists(atPath: tempDir.appendingPathComponent("drafts").path))
     }
@@ -65,7 +65,7 @@ final class FolderManagerTests: XCTestCase {
 
         let files = manager.loadWorkspaceFiles()
         XCTAssertFalse(files.isEmpty)
-        XCTAssertNotNil(files.first(where: { $0.name == "CLAUDE.md" }))
+        XCTAssertNotNil(files.first(where: { $0.name == WorkspaceInstructionFile.fileName }))
     }
 
     func testScaffoldEmbedsMeta() throws {
@@ -75,9 +75,92 @@ final class FolderManagerTests: XCTestCase {
         let manager = FolderManager(root: tempDir)
         try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
 
-        let content = try String(contentsOf: tempDir.appendingPathComponent("CLAUDE.md"), encoding: .utf8)
+        let content = try String(contentsOf: tempDir.appendingPathComponent(WorkspaceInstructionFile.fileName), encoding: .utf8)
         XCTAssertTrue(content.contains("Ji"))
         XCTAssertTrue(content.contains("Founder building audience"))
+    }
+
+    func testScaffoldDoesNotOverwriteExistingClaudeFile() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let claudePath = tempDir.appendingPathComponent("CLAUDE.md")
+        let originalClaude = "keep this important Claude config"
+        try originalClaude.write(to: claudePath, atomically: true, encoding: .utf8)
+
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
+
+        XCTAssertEqual(try String(contentsOf: claudePath, encoding: .utf8), originalClaude)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(WorkspaceInstructionFile.fileName).path))
+    }
+
+    func testEnsureWorkspaceInstructionsDoesNotOverwriteExistingAgentInstructions() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        let instructionsPath = tempDir.appendingPathComponent(WorkspaceInstructionFile.fileName)
+        let original = "custom agent instructions"
+        try original.write(to: instructionsPath, atomically: true, encoding: .utf8)
+
+        try manager.ensureWorkspaceInstructions(skill: .founder, name: "Ji", useCase: "Founder building audience")
+
+        XCTAssertEqual(try String(contentsOf: instructionsPath, encoding: .utf8), original)
+    }
+
+    func testNeedsLegacyClaudeReferencePromptWhenClaudeExists() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
+        try "legacy project instructions".write(
+            to: tempDir.appendingPathComponent("CLAUDE.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let config = HubConfig(name: "Ji", skillPack: .founder, useCase: "Founder building audience")
+        XCTAssertTrue(manager.needsLegacyClaudeReferencePrompt(config: config))
+    }
+
+    func testNeedsLegacyClaudeReferencePromptStopsAfterPromptRecorded() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
+        try "legacy project instructions".write(
+            to: tempDir.appendingPathComponent("CLAUDE.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let config = HubConfig(
+            name: "Ji",
+            skillPack: .founder,
+            useCase: "Founder building audience",
+            didPromptToLinkLegacyClaudeInstructions: true
+        )
+        XCTAssertFalse(manager.needsLegacyClaudeReferencePrompt(config: config))
+    }
+
+    func testAppendAgentInstructionsReferenceToLegacyClaudeIsIdempotent() throws {
+        let tempDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let manager = FolderManager(root: tempDir)
+        try manager.scaffold(skill: .founder, name: "Ji", useCase: "Founder building audience")
+        let claudePath = tempDir.appendingPathComponent("CLAUDE.md")
+        try "# Legacy Instructions\n".write(to: claudePath, atomically: true, encoding: .utf8)
+
+        try manager.appendAgentInstructionsReferenceToLegacyClaude()
+        try manager.appendAgentInstructionsReferenceToLegacyClaude()
+
+        let content = try String(contentsOf: claudePath, encoding: .utf8)
+        XCTAssertTrue(content.contains(WorkspaceInstructionFile.fileName))
+        XCTAssertEqual(content.components(separatedBy: WorkspaceInstructionFile.fileName).count, 2)
     }
 
     func testSavePiece() throws {

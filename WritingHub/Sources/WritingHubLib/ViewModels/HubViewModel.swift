@@ -58,10 +58,7 @@ public class HubViewModel: ObservableObject {
         if !FileManager.default.fileExists(atPath: writinghubDir.path) {
             try manager.scaffold(skill: skill, name: name, useCase: useCase)
         } else {
-            // Always keep CLAUDE.md up to date with current name/useCase
-            let claudePath = url.appendingPathComponent("CLAUDE.md")
-            try skill.claudeTemplate(name: name, useCase: useCase)
-                .write(to: claudePath, atomically: true, encoding: .utf8)
+            try manager.ensureWorkspaceInstructions(skill: skill, name: name, useCase: useCase)
         }
         self.folderManager = manager
 
@@ -169,6 +166,7 @@ public class HubViewModel: ObservableObject {
                         message: "Update \(path.lastPathComponent)",
                         paths: [path]
                     )
+                } catch GitError.missingAuthorIdentity {
                 } catch {
                     noticeMessage = error.localizedDescription
                 }
@@ -194,6 +192,7 @@ public class HubViewModel: ObservableObject {
 
         do {
             try gitService?.autoCommit(message: "Update \(fileURL.lastPathComponent)", paths: [fileURL])
+        } catch GitError.missingAuthorIdentity {
         } catch {
             noticeMessage = error.localizedDescription
         }

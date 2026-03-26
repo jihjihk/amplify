@@ -5,7 +5,7 @@ public struct StarterCommand: Sendable {
     public let description: String
 }
 
-/// A skill pack defines the folder structure, CLAUDE.md template, and onboarding
+/// A skill pack defines the folder structure, agent instructions template, and onboarding
 /// next-steps tailored to a specific type of writing workflow.
 public enum SkillPack: String, CaseIterable, Codable, Identifiable, Sendable {
     case founder
@@ -29,7 +29,7 @@ public enum SkillPack: String, CaseIterable, Codable, Identifiable, Sendable {
         case .gstack:
             return "Garry Tan's Claude Code workflow — CEO, designer, eng manager, QA, and shipping in one"
         case .blank:
-            return "Empty workspace with CLAUDE.md — bring your own structure"
+            return "Empty workspace with agent instructions — bring your own structure"
         }
     }
 
@@ -113,7 +113,7 @@ public enum SkillPack: String, CaseIterable, Codable, Identifiable, Sendable {
         }
     }
 
-    /// Generates a personalized CLAUDE.md for this skill pack.
+    /// Generates a personalized agent instructions file for this skill pack.
     public func claudeTemplate(name: String, useCase: String) -> String {
         switch self {
         case .founder:
