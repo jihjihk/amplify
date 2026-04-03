@@ -317,8 +317,20 @@ public final class AppUpdateService: NSObject, ObservableObject {
 
 extension AppUpdateService: URLSessionDownloadDelegate {
     nonisolated public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        // The temporary file at `location` is deleted when this callback returns,
+        // so copy it to a stable path before dispatching to MainActor.
+        let stableURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AmplifyDownload-\(UUID().uuidString).zip")
+        do {
+            try FileManager.default.moveItem(at: location, to: stableURL)
+        } catch {
+            Task { @MainActor [weak self] in
+                self?.state = .failure(message: error.localizedDescription)
+            }
+            return
+        }
         Task { @MainActor [weak self] in
-            self?.handleDownloadedArchive(at: location)
+            self?.handleDownloadedArchive(at: stableURL)
         }
     }
 
