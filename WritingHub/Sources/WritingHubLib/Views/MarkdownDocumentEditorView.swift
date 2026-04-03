@@ -237,7 +237,7 @@ private struct MarkupEditorBridge: View {
     var body: some View {
         RichMarkupEditorView(
             html: $session.html,
-            isDirty: session.isDirty,
+            renderRevision: session.renderRevision,
             markupDelegate: bridge,
             configuration: configuration,
             placeholder: "Start writing…",
@@ -249,14 +249,24 @@ private struct MarkupEditorBridge: View {
 
 private struct RichMarkupEditorView: NSViewRepresentable {
     @Binding var html: String
-    let isDirty: Bool
+    let renderRevision: Int
     let markupDelegate: MarkupDelegate
     let configuration: MarkupWKWebViewConfiguration
     let placeholder: String
     let id: String
 
-    func makeCoordinator() -> MarkupCoordinator {
-        MarkupCoordinator(markupDelegate: markupDelegate)
+    @MainActor
+    final class Coordinator {
+        let markupCoordinator: MarkupCoordinator
+        var lastAppliedRenderRevision: Int?
+
+        init(markupDelegate: MarkupDelegate) {
+            self.markupCoordinator = MarkupCoordinator(markupDelegate: markupDelegate)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(markupDelegate: markupDelegate)
     }
 
     func makeNSView(context: Context) -> MarkupWKWebView {
@@ -269,8 +279,9 @@ private struct RichMarkupEditorView: NSViewRepresentable {
             markupDelegate: markupDelegate,
             configuration: configuration
         )
-        webView.setCoordinatorConfiguration(context.coordinator)
-        context.coordinator.webView = webView
+        webView.setCoordinatorConfiguration(context.coordinator.markupCoordinator)
+        context.coordinator.markupCoordinator.webView = webView
+        context.coordinator.lastAppliedRenderRevision = renderRevision
         webView.setValue(false, forKey: "drawsBackground")
         webView.wantsLayer = true
         webView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -285,10 +296,9 @@ private struct RichMarkupEditorView: NSViewRepresentable {
         if #available(macOS 13.0, *) {
             webView.underPageBackgroundColor = .clear
         }
-        // Avoid re-injecting the whole document while the user is actively editing.
-        // That resets the browser selection/caret and shows up as the cursor jumping.
-        if !isDirty {
-            webView.setHtmlIfChanged(html)
+        if context.coordinator.lastAppliedRenderRevision != renderRevision {
+            context.coordinator.lastAppliedRenderRevision = renderRevision
+            webView.setHtml(html)
         }
     }
 }

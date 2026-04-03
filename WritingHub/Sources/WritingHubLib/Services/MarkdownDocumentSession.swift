@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 public final class MarkdownDocumentSession: ObservableObject {
     @Published public var html: String = ""
+    @Published public private(set) var renderRevision: Int = 0
     @Published public private(set) var title: String = ""
     @Published public private(set) var version: Int?
     @Published public private(set) var editedDate: String?
@@ -134,6 +135,7 @@ public final class MarkdownDocumentSession: ObservableObject {
         html = renderedHTML
         lastLoadedHTML = renderedHTML
         isApplyingProgrammaticChange = false
+        renderRevision += 1
         setDirty(false)
         clearNotice()
     }
@@ -162,14 +164,9 @@ public final class MarkdownDocumentSession: ObservableObject {
             lastLoadedDiskText = savedText
             envelope = MarkdownDocumentEnvelope.parse(from: savedText)
             updateMetadata(from: savedText)
-            let savedHTML = MarkdownRichTextCodec.html(fromMarkdown: envelope.bodyMarkdown)
-            lastLoadedHTML = savedHTML
-
-            if savedHTML != html {
-                isApplyingProgrammaticChange = true
-                html = savedHTML
-                isApplyingProgrammaticChange = false
-            }
+            // Keep the live editor HTML as-is after autosave. Replacing it with a
+            // normalized round-trip version resets the browser selection/caret.
+            lastLoadedHTML = candidateText
 
             setDirty(false)
             clearNotice()
