@@ -21,7 +21,7 @@ xcuserdata/
 *.ipa
 
 # Swift Package Manager
-Package.resolved
+# Package.resolved is tracked to pin dependency versions for CI
 .swiftpm/
 
 # IDE
